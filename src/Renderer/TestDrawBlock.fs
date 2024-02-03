@@ -330,7 +330,7 @@ module HLPTick3 =
         |> map (fun n -> middleOfSheet + {X=float n; Y=0.})
 
     /// demo test circuit consisting of a DFF & And gate
-    let makeTest1Circuit (andPos:XYPos) =
+    let makeTestCircuit (andPos:XYPos) =
         initSheetModel
         |> placeSymbol "G1" (GateN(And,2)) andPos
         |> Result.bind (placeSymbol "FF1" DFF middleOfSheet)
@@ -338,6 +338,27 @@ module HLPTick3 =
         |> Result.bind (placeWire (portOf "FF1" 0) (portOf "G1" 0) )
         |> getOkOrFail
 
+    /// 2D grid with resolution 35x35 pixels. The resolution is big enough so that the AND block only intersects with the DFF three times in all
+    let gridPositions =
+        (fromList [-105..35..105], fromList [-105..35..105])
+        ||>
+        product (fun a b -> a,b)
+        |> map (fun (a,b) -> middleOfSheet + {X = float a; Y = float b})
+
+    /// Filter condition that checks if there is overlap between the blocks. Returns False if so.
+    let checkOverLapThenTest (andPos: XYPos) =
+        let sheet = makeTestCircuit andPos
+        let boxes =
+            mapValues sheet.BoundingBoxes
+            |> Array.toList
+            |> List.mapi (fun n box -> n,box)
+        List.allPairs boxes boxes 
+        |> List.exists (fun ((n1,box1),(n2,box2)) -> (n1 <> n2) && BlockHelpers.overlap2DBox box1 box2)
+        |> not
+
+    /// 2D grid after applying the filter condition defined above.
+    let filteredGrid =
+        filter checkOverLapThenTest gridPositions
 
 
 //------------------------------------------------------------------------------------------------//
@@ -408,7 +429,7 @@ module HLPTick3 =
                 "Horizontally positioned AND + DFF: fail on sample 0"
                 firstSample
                 horizLinePositions
-                makeTest1Circuit
+                makeTestCircuit
                 (Asserts.failOnSampleNumber 0)
                 dispatch
             |> recordPositionInTest testNum dispatch
@@ -419,7 +440,7 @@ module HLPTick3 =
                 "Horizontally positioned AND + DFF: fail on sample 10"
                 firstSample
                 horizLinePositions
-                makeTest1Circuit
+                makeTestCircuit
                 (Asserts.failOnSampleNumber 10)
                 dispatch
             |> recordPositionInTest testNum dispatch
@@ -430,7 +451,7 @@ module HLPTick3 =
                 "Horizontally positioned AND + DFF: fail on symbols intersect"
                 firstSample
                 horizLinePositions
-                makeTest1Circuit
+                makeTestCircuit
                 Asserts.failOnSymbolIntersectsSymbol
                 dispatch
             |> recordPositionInTest testNum dispatch
@@ -441,8 +462,18 @@ module HLPTick3 =
                 "Horizontally positioned AND + DFF: fail all tests"
                 firstSample
                 horizLinePositions
-                makeTest1Circuit
+                makeTestCircuit
                 Asserts.failOnAllTests
+                dispatch
+            |> recordPositionInTest testNum dispatch
+
+        let test5 testNum firstSample dispatch =
+            runTestOnSheets
+                "Grid of AND surrounding DFF: fail on wire intersects symbol"
+                firstSample
+                filteredGrid
+                makeTestCircuit
+                Asserts.failOnWireIntersectsSymbol
                 dispatch
             |> recordPositionInTest testNum dispatch
 
@@ -456,7 +487,7 @@ module HLPTick3 =
                 "Test2", test2 // example
                 "Test3", test3 // example
                 "Test4", test4 
-                "Test5", fun _ _ _ -> printf "Test5" // dummy test - delete line or replace by real test as needed
+                "Test5", test5 // test auto route for cases where wire intersects symbol
                 "Test6", fun _ _ _ -> printf "Test6"
                 "Test7", fun _ _ _ -> printf "Test7"
                 "Test8", fun _ _ _ -> printf "Test8"
