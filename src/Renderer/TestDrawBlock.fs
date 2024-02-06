@@ -251,7 +251,7 @@ module HLPTick3 =
             let symToRotate = findSymbolFromLabel symLabel symMap
             match symToRotate with
             | Some (symbolId, symbol) ->
-                let rotatedSym = rotateSymbolInBlock rotate (getRotatedSymbolCentre symbol) symbol
+                let rotatedSym = rotateSymbolInBlock rotate (getRotatedSymbolCentre symbol) symbol // If the block only contains the symbol it should work?
                 let newSymbols = symMap.Add <| (symbolId, rotatedSym)
                 model
                 |> Optic.set symbolModel_ {model.Wire.Symbol with Symbols = newSymbols}
@@ -265,7 +265,7 @@ module HLPTick3 =
             let symToFlip = findSymbolFromLabel symLabel symMap
             match symToFlip with
             | Some (symbolId, symbol) ->
-                let flippedSym = flipSymbolInBlock flip (getRotatedSymbolCentre symbol) symbol
+                let flippedSym = flipSymbolInBlock flip (getRotatedSymbolCentre symbol) symbol // If the block only contains the symbol it should work?
                 let newSymbols = symMap.Add <| (symbolId, flippedSym)
                 model
                 |> Optic.set symbolModel_ {model.Wire.Symbol with Symbols = newSymbols}
@@ -377,7 +377,6 @@ module HLPTick3 =
                 | 1 -> Some SymbolT.FlipHorizontal
                 | 2 -> Some SymbolT.FlipVertical
                 | errVal -> failwithf $"Seed ranges from 0-3, no value outside this range should be generated: {errVal}"
-            printfn $"Rotation: {rotate}, Flip: {flip}"
             {|rotateSeed = rotate; flipSeed = flip|}
         let rotatedModel = rotateSymbol label rotateFlipSeed.rotateSeed model
         match rotateFlipSeed.flipSeed with
@@ -393,7 +392,7 @@ module HLPTick3 =
         |> Result.bind (placeWire (portOf "FF1" 0) (portOf "G1" 0) )
         |> getOkOrFail
 
-    // rotated demo test circuit
+    // rotated demo test circuit - new function although bad for functional abstraction, is necessary. If rotFlip is done after the wires are placed the wires are not re-defined.
     let makeRotFlipCircuit (andPos:XYPos) =
         initSheetModel
         |> placeSymbol "G1" (GateN(And,2)) andPos
@@ -415,7 +414,7 @@ module HLPTick3 =
     /// 2D grid after applying the filter condition defined above.
     let filteredGrid (circuitFunc: XYPos -> SheetT.Model) =
             /// Filter condition that checks if there is overlap between the blocks. Returns False if so.
-        let checkOverLapThenTest (andPos: XYPos) =
+        let checkOverLapThenTest (andPos: XYPos) = // Again, bad for functional abstraction, but easiest implementation without changing order of code.
             let sheet = circuitFunc andPos
             let boxes =
                 mapValues sheet.BoundingBoxes
@@ -542,6 +541,12 @@ module HLPTick3 =
                 dispatch
             |> recordPositionInTest testNum dispatch
 
+        // Note: The problem with this test is that without changing the way runTest or runTestOnSheets is implemented, symbol overlap is hard to filter out.
+        // It could however be argued that the wires do overlap with the symbols in this case as well. As mentioned by the prof here:
+        // https://edstem.org/us/courses/51379/discussion/4279964
+        // The choice between seeding and complete random generation was up to us. In this case, I haven't set a fixed seed and modified runTestOnSheet or runTest,
+        // Although doing this with an array of fixed pre generated rotation/flip seeds would mitigate the problem - The problem lies in the orientations changing
+        // between each time the function is called.
         let test6 testNum firstSample dispatch =
             runTestOnSheets
                 "Grid of AND surrounding DFF: arbitrary flip and rotate"
