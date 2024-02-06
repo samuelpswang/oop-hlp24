@@ -359,21 +359,20 @@ module HLPTick3 =
         fromList [-100..20..100]
         |> map (fun n -> middleOfSheet + {X=float n; Y=0.})
 
-
      // Implements an arbitrary flip or rotate on both components in the sheet.
-    let arbitraryFlipRotate (model: SheetT.Model) (label: string) =
+    let arbitraryFlipRotate (label: string) (model: SheetT.Model) =
         let rotateFlipSeed = 
-            let rotateSeed = randomInt 0 1 3
-            let flipSeed = randomInt 0 1 2
+            let rSeed = randomInt 0 1 3
+            let fSeed = randomInt 0 1 2
             let rotate =
-                match rotateSeed.Data 0 with
+                match rSeed.Data 0 with
                 | 0 -> Rotation.Degree0
                 | 1 -> Rotation.Degree90
                 | 2 -> Rotation.Degree180
                 | 3 -> Rotation.Degree270
                 | errVal -> failwithf $"Seed ranges from 0-3, no value outside this range should be generated: {errVal}"
             let flip =
-                match flipSeed.Data 0 with
+                match fSeed.Data 0 with
                 | 0 -> None
                 | 1 -> Some SymbolT.FlipHorizontal
                 | 2 -> Some SymbolT.FlipVertical
@@ -394,10 +393,17 @@ module HLPTick3 =
         |> Result.bind (placeWire (portOf "FF1" 0) (portOf "G1" 0) )
         |> getOkOrFail
 
-    // Implements an arbitrary flip or rotate on both components in the sheet.
-    let arbitraryFlipRotate (andPos: XYPos) =
-        makeTestCircuit andPos
-        |> rotateSymbol "G1" Rotation.Degree90
+    // rotated demo test circuit
+    let makeRotFlipCircuit (andPos:XYPos) =
+        initSheetModel
+        |> placeSymbol "G1" (GateN(And,2)) andPos
+        |> Result.bind (placeSymbol "FF1" DFF middleOfSheet)
+        |> getOkOrFail
+        |> arbitraryFlipRotate "G1"
+        |> arbitraryFlipRotate "FF1"
+        |> placeWire (portOf "G1" 0) (portOf "FF1" 0)
+        |> Result.bind (placeWire (portOf "FF1" 0) (portOf "G1" 0))
+        |> getOkOrFail
 
     /// 2D grid with resolution 35x35 pixels. The resolution is big enough so that the AND block only intersects with the DFF three times in all
     let gridPositions =
@@ -420,29 +426,6 @@ module HLPTick3 =
     /// 2D grid after applying the filter condition defined above.
     let filteredGrid =
         filter checkOverLapThenTest gridPositions
-
-    /// 2D grid with resolution 35x35 pixels. The resolution is big enough so that the AND block only intersects with the DFF three times in all
-    let gridPositions =
-        (fromList [-105..35..105], fromList [-105..35..105])
-        ||>
-        product (fun a b -> a,b)
-        |> map (fun (a,b) -> middleOfSheet + {X = float a; Y = float b})
-
-    /// Filter condition that checks if there is overlap between the blocks. Returns False if so.
-    let checkOverLapThenTest (andPos: XYPos) =
-        let sheet = makeTestCircuit andPos
-        let boxes =
-            mapValues sheet.BoundingBoxes
-            |> Array.toList
-            |> List.mapi (fun n box -> n,box)
-        List.allPairs boxes boxes 
-        |> List.exists (fun ((n1,box1),(n2,box2)) -> (n1 <> n2) && BlockHelpers.overlap2DBox box1 box2)
-        |> not
-
-    /// 2D grid after applying the filter condition defined above.
-    let filteredGrid =
-        filter checkOverLapThenTest gridPositions
-
 
 //------------------------------------------------------------------------------------------------//
 //-------------------------Example assertions used to test sheets---------------------------------//
