@@ -412,19 +412,18 @@ module HLPTick3 =
         product (fun a b -> a,b)
         |> map (fun (a,b) -> middleOfSheet + {X = float a; Y = float b})
 
-    /// Filter condition that checks if there is overlap between the blocks. Returns False if so.
-    let checkOverLapThenTest (andPos: XYPos) =
-        let sheet = makeTestCircuit andPos
-        let boxes =
-            mapValues sheet.BoundingBoxes
-            |> Array.toList
-            |> List.mapi (fun n box -> n,box)
-        List.allPairs boxes boxes 
-        |> List.exists (fun ((n1,box1),(n2,box2)) -> (n1 <> n2) && BlockHelpers.overlap2DBox box1 box2)
-        |> not
-
     /// 2D grid after applying the filter condition defined above.
-    let filteredGrid =
+    let filteredGrid (circuitFunc: XYPos -> SheetT.Model) =
+            /// Filter condition that checks if there is overlap between the blocks. Returns False if so.
+        let checkOverLapThenTest (andPos: XYPos) =
+            let sheet = circuitFunc andPos
+            let boxes =
+                mapValues sheet.BoundingBoxes
+                |> Array.toList
+                |> List.mapi (fun n box -> n,box)
+            List.allPairs boxes boxes 
+            |> List.exists (fun ((n1,box1),(n2,box2)) -> (n1 <> n2) && BlockHelpers.overlap2DBox box1 box2)
+            |> not
         filter checkOverLapThenTest gridPositions
 
 //------------------------------------------------------------------------------------------------//
@@ -537,8 +536,18 @@ module HLPTick3 =
             runTestOnSheets
                 "Grid of AND surrounding DFF: fail on wire intersects symbol"
                 firstSample
-                filteredGrid
+                (filteredGrid makeTestCircuit)
                 makeTestCircuit
+                Asserts.failOnWireIntersectsSymbol
+                dispatch
+            |> recordPositionInTest testNum dispatch
+
+        let test6 testNum firstSample dispatch =
+            runTestOnSheets
+                "Grid of AND surrounding DFF: arbitrary flip and rotate"
+                firstSample
+                (filteredGrid makeTestCircuit) // does not seem to filter out cases where there is overlap DUE to flip and rotate, but prof said this was fine - https://edstem.org/us/courses/51379/discussion/4279964 
+                makeRotFlipCircuit
                 Asserts.failOnWireIntersectsSymbol
                 dispatch
             |> recordPositionInTest testNum dispatch
@@ -554,7 +563,7 @@ module HLPTick3 =
                 "Test3", test3 // example
                 "Test4", test4 
                 "Test5", test5 // test auto route for cases where wire intersects symbol
-                "Test6", fun _ _ _ -> printf "Test6"
+                "Test6", test6 // test arbitrary flip and rotate without accounting for new symbol overlap due to flip/rotate
                 "Test7", fun _ _ _ -> printf "Test7"
                 "Test8", fun _ _ _ -> printf "Test8"
                 "Next Test Error", fun _ _ _ -> printf "Next Error:" // Go to the nexterror in a test
