@@ -91,6 +91,7 @@ module HLPTick3 =
     open Sheet.SheetInterface
     open GenerateData
     open TestLib
+    open RotateScale
 
     /// create an initial empty Sheet Model 
     let initSheetModel = DiagramMainView.init().Sheet
@@ -234,14 +235,42 @@ module HLPTick3 =
                 placeSymbol symLabel (Custom ccType) position model
             
         
+        // Find a symbol from its label
+        let findSymbolFromLabel (symLabel: string) (symMap: Map<ComponentId,SymbolT.Symbol>) : (Option<ComponentId * SymbolT.Symbol>) =
+            symMap
+            |> Map.tryPick (fun symId sym ->
+                if caseInvariantEqual sym.Component.Label symLabel
+                then Some (symId, sym)
+                else None
+            )
 
         // Rotate a symbol
         let rotateSymbol (symLabel: string) (rotate: Rotation) (model: SheetT.Model) : (SheetT.Model) =
-            failwithf "Not Implemented"
+            let symMap = model.Wire.Symbol.Symbols
+            let symToRotate = findSymbolFromLabel symLabel symMap
+            match symToRotate with
+            | Some (symbolId, symbol) ->
+                let rotatedSym = rotateSymbolInBlock rotate symbol.CentrePos symbol // getRotatedSymbolCentre instead here?
+                let newSymbols = symMap.Add <| (symbolId, rotatedSym)
+                model
+                |> Optic.set symbolModel_ {model.Wire.Symbol with Symbols = newSymbols}
+            | None ->
+                printfn $"No symbol with label {symLabel}"
+                model
 
         // Flip a symbol
         let flipSymbol (symLabel: string) (flip: SymbolT.FlipType) (model: SheetT.Model) : (SheetT.Model) =
-            failwithf "Not Implemented"
+            let symMap = model.Wire.Symbol.Symbols
+            let symToFlip = findSymbolFromLabel symLabel symMap
+            match symToFlip with
+            | Some (symbolId, symbol) ->
+                let flippedSym = flipSymbolInBlock flip symbol.CentrePos symbol // getRotatedSymbolCentre instead here?
+                let newSymbols = symMap.Add <| (symbolId, flippedSym)
+                model
+                |> Optic.set symbolModel_ {model.Wire.Symbol with Symbols = newSymbols}
+            | None ->
+                printfn $"No symbol with label {symLabel}"
+                model
 
         /// Add a (newly routed) wire, source specifies the Output port, target the Input port.
         /// Return an error if either of the two ports specified is invalid, or if the wire duplicates and existing one.
