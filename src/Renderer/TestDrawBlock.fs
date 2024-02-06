@@ -250,7 +250,7 @@ module HLPTick3 =
             let symToRotate = findSymbolFromLabel symLabel symMap
             match symToRotate with
             | Some (symbolId, symbol) ->
-                let rotatedSym = rotateSymbolInBlock rotate symbol.CentrePos symbol // getRotatedSymbolCentre instead here?
+                let rotatedSym = rotateSymbolInBlock rotate symbol.CentrePos symbol // getRotatedSymbolCentre instead here? This is from the Symbol.fs file.
                 let newSymbols = symMap.Add <| (symbolId, rotatedSym)
                 model
                 |> Optic.set symbolModel_ {model.Wire.Symbol with Symbols = newSymbols}
@@ -264,7 +264,7 @@ module HLPTick3 =
             let symToFlip = findSymbolFromLabel symLabel symMap
             match symToFlip with
             | Some (symbolId, symbol) ->
-                let flippedSym = flipSymbolInBlock flip symbol.CentrePos symbol // getRotatedSymbolCentre instead here?
+                let flippedSym = flipSymbolInBlock flip symbol.CentrePos symbol // getRotatedSymbolCentre instead here? This is from the Symbol.fs file.
                 let newSymbols = symMap.Add <| (symbolId, flippedSym)
                 model
                 |> Optic.set symbolModel_ {model.Wire.Symbol with Symbols = newSymbols}
@@ -366,6 +366,11 @@ module HLPTick3 =
         |> Result.bind (placeWire (portOf "G1" 0) (portOf "FF1" 0))
         |> Result.bind (placeWire (portOf "FF1" 0) (portOf "G1" 0) )
         |> getOkOrFail
+
+    // Implements an arbitrary flip or rotate on both components in the sheet.
+    let arbitraryFlipRotate (andPos: XYPos) =
+        makeTestCircuit andPos
+        |> flipSymbol "G1" SymbolT.FlipHorizontal
 
     /// 2D grid with resolution 35x35 pixels. The resolution is big enough so that the AND block only intersects with the DFF three times in all
     let gridPositions =
