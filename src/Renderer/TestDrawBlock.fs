@@ -359,6 +359,32 @@ module HLPTick3 =
         fromList [-100..20..100]
         |> map (fun n -> middleOfSheet + {X=float n; Y=0.})
 
+
+     // Implements an arbitrary flip or rotate on both components in the sheet.
+    let arbitraryFlipRotate (model: SheetT.Model) (label: string) =
+        let rotateFlipSeed = 
+            let rotateSeed = randomInt 0 1 3
+            let flipSeed = randomInt 0 1 2
+            let rotate =
+                match rotateSeed.Data 0 with
+                | 0 -> Rotation.Degree0
+                | 1 -> Rotation.Degree90
+                | 2 -> Rotation.Degree180
+                | 3 -> Rotation.Degree270
+                | errVal -> failwithf $"Seed ranges from 0-3, no value outside this range should be generated: {errVal}"
+            let flip =
+                match flipSeed.Data 0 with
+                | 0 -> None
+                | 1 -> Some SymbolT.FlipHorizontal
+                | 2 -> Some SymbolT.FlipVertical
+                | errVal -> failwithf $"Seed ranges from 0-3, no value outside this range should be generated: {errVal}"
+            printfn $"Rotation: {rotate}, Flip: {flip}"
+            {|rotateSeed = rotate; flipSeed = flip|}
+        let rotatedModel = rotateSymbol label rotateFlipSeed.rotateSeed model
+        match rotateFlipSeed.flipSeed with
+        | Some flip -> flipSymbol label flip rotatedModel
+        | None -> rotatedModel
+
     /// demo test circuit consisting of a DFF & And gate
     let makeTestCircuit (andPos:XYPos) =
         initSheetModel
@@ -368,10 +394,6 @@ module HLPTick3 =
         |> Result.bind (placeWire (portOf "FF1" 0) (portOf "G1" 0) )
         |> getOkOrFail
 
-    // Implements an arbitrary flip or rotate on both components in the sheet.
-    let arbitraryFlipRotate (andPos: XYPos) =
-        makeTestCircuit andPos
-        |> rotateSymbol "G1" Rotation.Degree90
 
     /// 2D grid with resolution 35x35 pixels. The resolution is big enough so that the AND block only intersects with the DFF three times in all
     let gridPositions =
