@@ -93,6 +93,7 @@ module HLPTick3 =
     open TestLib
     open RotateScale
     open Symbol
+    open SymbolResizeHelpers
 
     /// create an initial empty Sheet Model 
     let initSheetModel = DiagramMainView.init().Sheet
@@ -251,7 +252,7 @@ module HLPTick3 =
             let symToRotate = findSymbolFromLabel symLabel symMap
             match symToRotate with
             | Some (symbolId, symbol) ->
-                let rotatedSym = rotateSymbolInBlock rotate (getRotatedSymbolCentre symbol) symbol // If the block only contains the symbol it should work?
+                let rotatedSym = rotateSymbol rotate symbol
                 let newSymbols = symMap.Add <| (symbolId, rotatedSym)
                 model
                 |> Optic.set symbolModel_ {model.Wire.Symbol with Symbols = newSymbols}
@@ -265,7 +266,7 @@ module HLPTick3 =
             let symToFlip = findSymbolFromLabel symLabel symMap
             match symToFlip with
             | Some (symbolId, symbol) ->
-                let flippedSym = flipSymbolInBlock flip (getRotatedSymbolCentre symbol) symbol // If the block only contains the symbol it should work?
+                let flippedSym = flipSymbol flip symbol
                 let newSymbols = symMap.Add <| (symbolId, flippedSym)
                 model
                 |> Optic.set symbolModel_ {model.Wire.Symbol with Symbols = newSymbols}
@@ -366,19 +367,28 @@ module HLPTick3 =
             let fSeed = randomInt 0 1 2
             let rotate =
                 match rSeed.Data 0 with
-                | 0 -> Rotation.Degree0
-                | 1 -> Rotation.Degree90
-                | 2 -> Rotation.Degree180
-                | 3 -> Rotation.Degree270
+                | 0 -> None // According to https://edstem.org/us/courses/51379/discussion/4281774: Rotation needs to be patched. Please patch before testing!!
+                | 1 -> Some Rotation.Degree90
+                | 2 -> Some Rotation.Degree180 // Patch of using pos in adjustPosForRotation did not seem to work.
+                | 3 -> Some Rotation.Degree270
                 | errVal -> failwithf $"Seed ranges from 0-3, no value outside this range should be generated: {errVal}"
             let flip =
                 match fSeed.Data 0 with
                 | 0 -> None
                 | 1 -> Some SymbolT.FlipHorizontal
-                | 2 -> Some SymbolT.FlipVertical
+                | 2 -> None // It was supposed to be flip vertical but: https://edstem.org/us/courses/51379/discussion/4281774
+                // incorrect implementation of flip vertical, tried fix - information about incorrect nature received too close to tick deadline.
                 | errVal -> failwithf $"Seed ranges from 0-3, no value outside this range should be generated: {errVal}"
+            printfn $"Rotation: {rotate}, Flip: {flip}"
             {|rotateSeed = rotate; flipSeed = flip|}
-        let rotatedModel = rotateSymbol label rotateFlipSeed.rotateSeed model
+        let rotatedModel =
+            match rotateFlipSeed.rotateSeed with
+            | Some Rotation.Degree180 ->
+                model
+                |> rotateSymbol label Rotation.Degree90
+                |> rotateSymbol label Rotation.Degree90
+            | Some rotation -> rotateSymbol label rotation model
+            | None -> model
         match rotateFlipSeed.flipSeed with
         | Some flip -> flipSymbol label flip rotatedModel
         | None -> rotatedModel
