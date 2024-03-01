@@ -26,7 +26,8 @@ type SheetAlignCircuitType =
     | MultipleConnections of SheetT.Model
     | GateScaling of SheetT.Model
     | MultipleMUX of SheetT.Model
-    | CustomComponentScaling of SheetT.Model
+    | OrderFlip of SheetT.Model
+    | CustomComponents of SheetT.Model
 
         
 /// Empty function that will hold the completed sheetAlignScale function
@@ -290,6 +291,7 @@ let makeMultipleMux (_: XYPos) =
     |> Result.bind (Builder.placeWire (portOf "MUX1" 0) (portOf "MUX2" 0))
     |> Result.bind (Builder.placeWire (portOf "MUX2" 0) (portOf "C" 0))
     |> TestLib.getOkOrFail
+    |> MultipleMUX
 
 
 // Circuit emulating results from orderFlip, for compatibility with the other beautify algorithms.
@@ -306,4 +308,28 @@ let orderFlipTest (_: XYPos) =
     |> Result.bind (Builder.placeWire (portOf "MUX1" 0) (portOf "G1" 0))
     |> Result.bind (Builder.placeWire (portOf "MUX2" 0) (portOf "G1" 1))
     |> TestLib.getOkOrFail
+    |> OrderFlip
+
+
+// Defined custom component
+let customMain =
+    {
+        Name = "MAIN";
+        InputLabels = [("A", 1); ("B", 1); ("S2", 1); ("S1", 1)];
+        OutputLabels = [("E", 1); ("F", 1); ("G", 1)];
+        Form = None
+        Description = None
+    }
+
+
+// Aligning and scaling of circuits with custom components
+let customComponentScaling (_: XYPos) =
+    initSheetModel
+    |> Builder.placeSymbol "MAIN1" (Custom(customMain)) middleOfSheet
+    |> Result.bind (Builder.placeSymbol "MAIN2" (Custom(customMain)) {middleOfSheet with X = middleOfSheet.X + 200.0})
+    |> Result.bind (Builder.placeWire (portOf "MAIN1" 0) (portOf "MAIN2" 0))
+    |> Result.bind (Builder.placeWire (portOf "MAIN1" 1) (portOf "MAIN2" 1))
+    |> Result.bind (Builder.placeWire (portOf "MAIN1" 2) (portOf "MAIN2" 2))
+    |> TestLib.getOkOrFail
+    |> CustomComponents
 

@@ -1,23 +1,30 @@
-﻿// Summary of <sk1421>'s improvements to RotateScale:
-// 1. Line 261 onwards [updateData]: Match case compression (bringing common logic before the match),
-// better use of monadic library functions (bind).
-// 2. Line 280 onwards [tryResize]: Ordering - Changed the order of sym and symCount (sym is more static
-// parameter) to facilitate currying.
-// 3. Line 298 onwards [tryResize]: Match case compression - brought common logic before the match, to
-// calculate one variable whose value could be used in the horizontal or vertical alignment.
-// 4. Line 315 onwards [scaledSymbol]: Better use of pipelines - this was facilitated by switching the order of
-// arguments in the function tryResize
-// 5. Better XML docs: Lines 87 [getWirePorts] onwards, 124 [alignPortsOffset] onwards, 145 [alignSymbols] onwards, 227 [updateOrInsert] onwards - streamlined XML
-// documentation, ensuring line breaks and explanation of the parameters of each function.
-// 6. Changed function name and variables [getWirePorts]: getPortsAB renamed to getWirePorts -> More descriptive, the function is meant to get the source and target ports of a
-// wire from the two symbols connected to it.
-// 7. Lines 367 onwards [rotatePointAboutBlockCentre]: Better use of anonymous functions to make the pipeline readable, and more functional.
-// Change function names to make them more descriptive and extract similar functionality from the same
-// function (one function just used the opposite sign for the same value - more in the description).
-// 8. Lines 411 onwards [adjustPosForBlockRotation]: Used anonymous function at the end of the pipeline to subtract offset
-// from the position. Also removed redundant helper function within the function.
-// 9. Lines 435 onwards [adjustPosForBlockFlip]: Same as above, implemented the same functionality except for flip state.
-// Also removed redundant helper function within the function.
+﻿// Summary of <sk1421>'s improvements to RotateScale (more details about transform
+// names can be found in the line numbers mentioned):
+// 1. [Transform 6 & 1] Line 268 onwards [updateData]: Match case compression
+// (bringing common logic before the match), better use of monadic library functions
+// (bind).
+// 2. [Transform 2] Line 287 onwards [tryResize]: Ordering - Changed the order
+// of sym and symCount (sym is more static parameter) to facilitate currying.
+// 3. [Transform 1] Line 305 onwards [tryResize]: Match case compression - brought
+// common logic before the match, to calculate one variable whose value could be
+// used in the horizontal or vertical alignment.
+// 4. [Transform 3 & 1] Line 322 onwards [scaledSymbol]: Better use of pipelines -
+// this was facilitated by switching the order of arguments in the function tryResize
+// 5. Better XML docs: Lines 94 [getWirePorts] onwards, 131 [alignPortsOffset] onwards,
+// 152 [alignSymbols] onwards, 234 [updateOrInsert] onwards - streamlined XML documentation,
+// ensuring line breaks in intellisense and explanation of the parameters of each function.
+// 6. [Line 101] Changed function name and variables [getWirePorts]: getPortsAB renamed to getWirePorts
+// This is more descriptive, the function is meant to get the source and target ports of a wire
+// from the two symbols connected to it.
+// 7. [Transform 3] Lines 374 onwards [rotatePointAboutBlockCentre]: Better use of anonymous
+// functions to make the pipeline readable, and more functional. Change function names to make
+// them more descriptive and extract similar functionality from the same function (one function
+// just used the opposite sign for the same value - more in the description).
+// 8. [Transform 1] Lines 418 onwards [adjustPosForBlockRotation]: Used anonymous function at the
+// end of the pipeline to subtract offset from the position. Also removed redundant helper function
+// within the function.
+// 9. [Transform 1] Lines 442 onwards [adjustPosForBlockFlip]: Same as above, implemented the same
+// functionality except for flip state. Also removed redundant helper function within the function.
 
 module RotateScale
 open CommonTypes
