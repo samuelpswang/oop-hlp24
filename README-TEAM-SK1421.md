@@ -10,3 +10,4 @@ The group contribution can be found [here](src/Renderer/TestDrawBlockD1.fs). Som
 6. Added multiple connections from single port circuit.
 7. Added one test case from the `sheetOrderFlip` examples. For cross algorithm compatibility and better team cohesion.
 8. Added flip and rotate based on symbol label. Added random seed generators useful for random flips and rotates. Useful for generating random circuits for the rest of the team.
+9. Added custom component circuit to test scaling and alignment.
