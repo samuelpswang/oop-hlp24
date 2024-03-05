@@ -82,11 +82,11 @@ let multipleConnectionsTest (offsetFromCentre: float) =
 let makeMultipleMux (_: XYPos) =
     initSheetModel
     |> Builder.placeSymbol "MUX2" Mux2 middleOfSheet
-    |> Result.bind (Builder.placeSymbol "MUX1" Mux2 {X = middleOfSheet.X - 175.0; Y = middleOfSheet.Y - 28.0})
+    |> Result.bind (Builder.placeSymbol "MUX1" Mux2 {X = middleOfSheet.X - 175.0; Y = middleOfSheet.Y - 20.0})
     |> Result.bind (Builder.placeSymbol "A" (Input1(1, None)) {X = middleOfSheet.X - 300.0; Y = middleOfSheet.Y - 56.0})
     |> Result.bind (Builder.placeSymbol "B" (Input1 (1, None)) {X = middleOfSheet.X - 300.0; Y = middleOfSheet.Y})
     |> Result.bind (Builder.placeSymbol "S2" (Input1 (1, None)) {X = middleOfSheet.X - 250.0; Y = middleOfSheet.Y + 100.0})
-    |> Result.bind (Builder.placeSymbol "C" (Output(1)) {X = middleOfSheet.X + 150.0; Y = middleOfSheet.Y})
+    |> Result.bind (Builder.placeSymbol "C" (Output(1)) {X = middleOfSheet.X + 150.0; Y = middleOfSheet.Y + 10.0})
     |> Result.bind (Builder.placeWire (portOf "A" 0) (portOf "MUX1" 0))
     |> Result.bind (Builder.placeWire (portOf "B" 0) (portOf "MUX1" 1))
     |> Result.bind (Builder.placeWire (portOf "S2" 0) (portOf "MUX2" 2))

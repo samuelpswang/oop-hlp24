@@ -194,7 +194,38 @@ let connectedSymbolsMap (sheet: SheetT.Model) =
                             | Some wireList -> Map.add syms (wire :: wireList) map
                             | None -> Map.add syms [wire] map) Map.empty
 
+let findSymbol (symId:ComponentId) (sheet:SheetT.Model)=
+    sheet.Wire.Symbol.Symbols |> Map.find  symId
+
+let checkMoreInput1OutputPortSymbol (compId:ComponentId) (sheet:SheetT.Model) =
+    let sym = findSymbol compId sheet
+    let numInputPorts= sym.Component.InputPorts |> List.length 
+    let numOutputPorts= sym.Component.OutputPorts |> List.length
+    (numInputPorts >= 0) && (numOutputPorts = 1)
  
+/// Gets the all the wires from the output ports. 
+let getOutputPortWires (compId:ComponentId) (sheet: SheetT.Model)=
+    let sym = findSymbol compId sheet
+    let outputPorts= sym.Component.OutputPorts 
+    outputPorts 
+    |> List.collect (fun port -> getWiresFromPort sheet port false)
+
+// Only take the first wire in the list of wires, you are only straightening them one at a time
+// let signedSymbolOffset (compId:ComponentId) (sheet: SheetT.Model)=
+//     let sym = findSymbol compId sheet
+//     (getOutputPortWires compId sheet)[0] , changeOffsetSign sym sym.Component.OutputPorts[0].Id
+// let changeOffsetSign (sym: Symbol) (portId: string) =
+    
+
+/// Gets the all the wires from the input ports.
+let getInputPortWires (compId:ComponentId) (sheet: SheetT.Model)=
+    let sym = findSymbol compId sheet
+    let inputPorts= sym.Component.InputPorts 
+    inputPorts 
+    |> List.collect (fun port -> getWiresFromPort sheet port true)
+    
+
+
 ///In this phase all singly-connected components are aligned and their wires are streightend.
 let firstPhaseStraightening (sheet: SheetT.Model) =
     let initialOverlap = countIntersectedSymbols sheet
@@ -213,6 +244,7 @@ let firstPhaseStraightening (sheet: SheetT.Model) =
                         if countIntersectedSymbols newSheet > initialOverlap
                         then sheet
                         else newSheet) sheet
+    // Fix bounding boxes update logic - needs to be updated after each symbol is moved on the sheet
     |> SheetUpdateHelpers.updateBoundingBoxes
     |> rerouteWires (List.map (fun sym -> sym.Id) changedSymbolList) XYPos.zero
     
@@ -236,3 +268,32 @@ let secondPhaseStraightening (sheet: SheetT.Model)=
     
     //IMPORTANT NOTE: The align1PortSymbol function has a terible name, it actually aligns a symbol according its wire. 
     //Will change the name when I can focus in order to find the name that makes sense for the both phases.
+
+let extractMoreInput1OutputPortSymbolsSorted (sheet: SheetT.Model)=
+    sheet.Wire.Symbol.Symbols 
+    |> Map.filter (fun compId _ -> checkMoreInput1OutputPortSymbol compId sheet)
+    |> Map.toList 
+    |> List.map snd
+    |> List.sortBy (fun sym -> sym.Pos.X)
+    |> List.rev
+
+
+let thirdPhase (sheet: SheetT.Model) = 
+
+    extractMoreInput1OutputPortSymbolsSorted sheet
+    |> List.map (fun sym -> sym, (getOutputPortWires sym.Id sheet)[0])
+    |> Map.ofList
+    |> Map.filter (fun _sym wire -> straighteningPotentialWire wire sheet)
+    |> Map.map (fun _sym wire -> calculateOffset wire sheet)
+    |> Map.map (fun sym unsignedOffset -> 
+                    let sign = (changeOffsetSign sym sym.Component.OutputPorts[0].Id)
+                    {X = unsignedOffset.X * sign; Y = unsignedOffset.Y * sign})
+    |> Map.fold (fun sheet sym offset -> 
+                    let newSym = BlockHelpers.moveSymbol offset sym
+                    Optic.set (SheetT.symbolOf_ sym.Id) newSym sheet
+                    |> rerouteWires [sym.Id] offset
+                    |> SheetUpdateHelpers.updateBoundingBoxes) sheet
+    
+
+// For all phases, check symbol overlap after move symbol, else keep old sheet - check firstPhaseStraightening logic for reason
+// If overlap you dont want to move anything. Third phase logic seems the most sound - refactor first phase
