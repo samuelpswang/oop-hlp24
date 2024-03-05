@@ -131,3 +131,23 @@ let customComponentScaling (_: XYPos) =
     |> Result.bind (Builder.placeWire (portOf "MAIN1" 1) (portOf "MAIN2" 1))
     |> Result.bind (Builder.placeWire (portOf "MAIN1" 2) (portOf "MAIN2" 2))
     |> TestLib.getOkOrFail
+
+
+let tripleMUX (_: XYPos) =
+    initSheetModel
+    |> Builder.placeSymbol "MUX2" Mux2 middleOfSheet
+    |> Result.bind (Builder.placeSymbol "MUX1" Mux2 {X = middleOfSheet.X - 175.0; Y = middleOfSheet.Y - 40.0})
+    |> Result.bind (Builder.placeSymbol "A" (Input1(1, None)) {X = middleOfSheet.X - 300.0; Y = middleOfSheet.Y - 68.4})
+    |> Result.bind (Builder.placeSymbol "B" (Input1 (1, None)) {X = middleOfSheet.X - 300.0; Y = middleOfSheet.Y})
+    |> Result.bind (Builder.placeSymbol "S2" (Input1 (1, None)) {X = middleOfSheet.X - 300.0; Y = middleOfSheet.Y + 100.0})
+    |> Result.bind (Builder.placeSymbol "MUX3" Mux2 {X = middleOfSheet.X + 150.0; Y = middleOfSheet.Y + 125.0})
+    |> Result.bind(Builder.placeSymbol "S1" (Input1(1, None)) {X = middleOfSheet.X - 250.0; Y = middleOfSheet.Y + 200.0})
+    |> Result.bind (Builder.placeWire (portOf "A" 0) (portOf "MUX1" 0))
+    |> Result.bind (Builder.placeWire (portOf "B" 0) (portOf "MUX1" 1))
+    |> Result.bind (Builder.placeWire (portOf "S2" 0) (portOf "MUX2" 2))
+    |> Result.bind (Builder.placeWire (portOf "MUX1" 0) (portOf "MUX2" 0))
+    |> Result.bind (Builder.placeWire (portOf "MUX2" 0) (portOf "MUX3" 0))
+    |> Result.bind (Builder.placeWire (portOf "S1" 0) (portOf "MUX1" 2))
+    |> Result.bind (Builder.placeWire (portOf "S1" 0) (portOf "MUX2" 1))
+    |> Result.bind (Builder.placeWire (portOf "S1" 0) (portOf "MUX3" 1))
+    |> TestLib.getOkOrFail

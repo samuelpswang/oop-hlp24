@@ -212,23 +212,21 @@ let visibleSegments (wId: ConnectionId) (model: SheetT.Model): XYPos list =
         | IsEven, BusWireT.Vertical | IsOdd, BusWireT.Horizontal -> {X=0.; Y=seg.Length}
         | IsEven, BusWireT.Horizontal | IsOdd, BusWireT.Vertical -> {X=seg.Length; Y=0.}
 
-    /// Return a list of segment vectors with 3 vectors coalesced into one visible equivalent
-    /// if this is possible, otherwise return segVecs unchanged.
-    /// Index must be in range >= 1
-    let tryCoalesceAboutIndex (segVecs: XYPos list) (index: int)  =
-        if index < segVecs.Length - 1 && segVecs[index] =~ XYPos.zero
-        then
+    /// Return the list of segment vectors with 3 vectors coalesced into one visible equivalent
+    /// wherever this is possible
+    let rec coalesce (segVecs: XYPos list)  =
+        match List.tryFindIndex (fun segVec -> segVec =~ XYPos.zero) segVecs[1..segVecs.Length-2] with          
+        | Some zeroVecIndex ->
+            let index = zeroVecIndex + 1 // base index as it should be on full segVecs
             segVecs[0..index-2] @
             [segVecs[index-1] + segVecs[index+1]] @
             segVecs[index+2..segVecs.Length - 1]
-        else
-            segVecs
-
+            |> coalesce
+        | None -> segVecs
+    
     wire.Segments
     |> List.mapi getSegmentVector
-    |> (fun segVecs ->
-            (segVecs,[1..segVecs.Length-2])
-            ||> List.fold tryCoalesceAboutIndex)
+    |> coalesce
 //helper function
 //Kept the wId name for consistency with the other modules
 ///Creates list of tuples where fst is the segStart and snd is the segEnd for all visible Segments
