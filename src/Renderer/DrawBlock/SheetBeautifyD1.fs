@@ -223,7 +223,25 @@ let getInputPortWires (compId:ComponentId) (sheet: SheetT.Model)=
     let inputPorts= sym.Component.InputPorts 
     inputPorts 
     |> List.collect (fun port -> getWiresFromPort sheet port true)
-    
+
+
+// You're partitioning the BoundingBoxes map into two maps: symBBMap, containing the bounding boxes of the symbol
+// with the specified symId, and otherSymBBMap, containing the bounding boxes of all other symbols.
+// You extract the bounding box of the specified symbol (symBB) from symBBMap.
+// You collect all the bounding boxes of the other symbols (otherSymsBB) from otherSymBBMap.
+// Finally, you iterate over otherSymsBB and check if any of these bounding boxes overlap with the bounding
+// box of the specified symbol (symBB), using the overlap2DBox function from BlockHelpers.
+
+let checkSymbolOverlap (symId: ComponentId) (sheet: SheetT.Model) =
+    // let symBBMap = Map.filter (fun otherSymId _ -> otherSymId = symId) sheet.BoundingBoxes
+    // let otherSymBBMap = Map.filter (fun otherSymId _ -> not(otherSymId = symId)) sheet.BoundingBoxes
+    // These two are logically the same as below (I think)
+    let symBBMap, otherSymBBMap = Map.partition (fun otherSymId _ -> otherSymId = symId) sheet.BoundingBoxes
+    let symBB = (Map.toList >> List.map snd >> List.item 0) symBBMap
+    let otherSymsBB = (Map.toList >> List.map snd) otherSymBBMap
+    List.exists (fun otherSymBB -> BlockHelpers.overlap2DBox otherSymBB symBB) otherSymsBB
+
+
 
 
 ///In this phase all singly-connected components are aligned and their wires are streightend.
