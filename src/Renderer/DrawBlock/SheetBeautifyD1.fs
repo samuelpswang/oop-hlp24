@@ -14,6 +14,15 @@ open DrawModelType.BusWireT
 //________________________________________________________________________________________________________________________
 
 
+let failOnSymbolIntersectsSymbol (sheet: SheetT.Model) =
+    let wireModel = sheet.Wire
+    let boxes =
+        (Map.toArray >> Array.map snd) sheet.BoundingBoxes
+        |> Array.toList
+        |> List.mapi (fun n box -> n,box)
+    List.allPairs boxes boxes 
+    |> List.exists (fun ((n1,box1),(n2,box2)) -> (n1 <> n2) && BlockHelpers.overlap2DBox box1 box2)
+
 //List of all the symbols on the sheet
 let symbolList (sheet: SheetT.Model) = 
     Map.toList sheet.Wire.Symbol.Symbols
@@ -70,8 +79,14 @@ let getPotentialWireOffset (sheet: SheetT.Model) (wires: list<Wire> ) =
     if wires = []
     then XYPos.zero
     else
-        let firstWire = List.item 0 wires
-        calculateOffset firstWire sheet
+        // let firstWire = List.item 0 wires
+        // calculateOffset firstWire sheet
+        List.map (fun wire -> calculateOffset wire sheet) wires
+        |> List.sortBy (fun pos -> abs(pos.X) + abs(pos.Y))
+        |> (fun posList -> 
+                printfn $"{posList}"
+                posList)
+        |> List.item 0
     
 
 let getWiresFromPort (sheet: SheetT.Model) (port: Port) (wireInputPort: bool) =
@@ -241,7 +256,11 @@ let checkSymbolOverlap (symId: ComponentId) (sheet: SheetT.Model) =
     let otherSymsBB = (Map.toList >> List.map snd) otherSymBBMap
     List.exists (fun otherSymBB -> BlockHelpers.overlap2DBox otherSymBB symBB) otherSymsBB
 
-
+let updateSheetWires (sheet: SheetT.Model) = 
+    let wList = (Map.toList >> List.map snd) sheet.Wire.Wires
+    List.fold (fun sheet wire -> 
+                    let newWire = BusWireRoute.updateWire sheet.Wire wire true
+                    Optic.set (SheetT.wireOf_ newWire.WId) newWire sheet) sheet wList
 
 
 ///In this phase all singly-connected components are aligned and their wires are streightend.
@@ -265,6 +284,7 @@ let firstPhaseStraightening (sheet: SheetT.Model) =
     // Fix bounding boxes update logic - needs to be updated after each symbol is moved on the sheet
     |> rerouteWires (List.map (fun sym -> sym.Id) changedSymbolList) XYPos.zero
     
+// if countIntersectedSymbols newSheet > initialOverlap
 
 /// Phase where scaling and moving is done to a pair of multiport symbols (works for custom and non-custom) in order
 ///  to streighten the wires between them.
@@ -281,6 +301,7 @@ let secondPhaseStraightening (sheet: SheetT.Model)=
                     let newSym = align1PortSymbol(fst syms) scaledModel
                     Optic.set (SheetT.symbolOf_ newSym.Id) newSym scaledModel
                     |> rerouteWires [newSym.Id] XYPos.zero) sheet
+    |> updateSheetWires
 
     
     //IMPORTANT NOTE: The align1PortSymbol function has a terible name, it actually aligns a symbol according its wire. 
@@ -336,9 +357,14 @@ let alignSymbolFolder (sheet: SheetT.Model) (symId: ComponentId) =
                                         //printfn $"{sym.Component.Label}"
                                         BlockHelpers.moveSymbol signedOffset sym) (symbol :: inputConnectedSymbol)
         List.fold (fun sheet sym -> 
-                    Optic.set (SheetT.symbolOf_ sym.Id) sym sheet 
-                    |> rerouteWires [sym.Id] signedOffset) sheet newSymbols
-        |> SheetUpdateHelpers.updateBoundingBoxes
+                    printfn $"{sym.Component.Label}'s overlap : {failOnSymbolIntersectsSymbol sheet}"
+                    let newSheet = Optic.set (SheetT.symbolOf_ sym.Id) sym sheet |> SheetUpdateHelpers.updateBoundingBoxes
+                    if checkSymbolOverlap sym.Id newSheet
+                    then sheet // |> SheetUpdateHelpers.updateBoundingBoxes
+                    else 
+                        newSheet
+                        |> rerouteWires [sym.Id] signedOffset) sheet newSymbols
+        // |> SheetUpdateHelpers.updateBoundingBoxes
     | None -> sheet
     
 
@@ -347,10 +373,18 @@ let getSymFromLabel (label: string) (sheet: SheetT.Model) =
     |> List.find(fun sym -> sym.Component.Label = label)
 
 
+// let thirdPhase (sheet: SheetT.Model) =
+//     let newSheet =
+//         extractMoreInput1OutputPortSymbolsSorted sheet
+//         |> List.map (fun sym -> sym.Id)
+//         |> List.fold alignSymbolFolder sheet
+//     let wList = (Map.toList >> List.map snd) sheet.Wire.Wires
+//     List.fold (fun sheet wire -> 
+//                     let newWire = BusWireRoute.updateWire sheet.Wire wire true
+//                     Optic.set (SheetT.wireOf_ newWire.WId) newWire sheet) newSheet wList
+
 let thirdPhase (sheet: SheetT.Model) =
     extractMoreInput1OutputPortSymbolsSorted sheet
     |> List.map (fun sym -> sym.Id)
     |> List.fold alignSymbolFolder sheet
-    
-
-// YOU FUCKING DONKEY USE SYMBOL ID BECAUSE SYMBOLS CHANGE WITH SHEET UPDATES
+    |> updateSheetWires
