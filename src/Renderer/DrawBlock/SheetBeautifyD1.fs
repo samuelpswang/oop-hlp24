@@ -14,19 +14,15 @@ open DrawModelType.BusWireT
 //________________________________________________________________________________________________________________________
 
 
-let failOnSymbolIntersectsSymbol (sheet: SheetT.Model) =
-    let wireModel = sheet.Wire
-    let boxes =
-        (Map.toArray >> Array.map snd) sheet.BoundingBoxes
-        |> Array.toList
-        |> List.mapi (fun n box -> n,box)
-    List.allPairs boxes boxes 
-    |> List.exists (fun ((n1,box1),(n2,box2)) -> (n1 <> n2) && BlockHelpers.overlap2DBox box1 box2)
-
 //List of all the symbols on the sheet
 let symbolList (sheet: SheetT.Model) = 
     Map.toList sheet.Wire.Symbol.Symbols
     |> List.map snd
+
+
+let getSymFromLabel (label: string) (sheet: SheetT.Model) = 
+    (Map.toList >> List.map snd) sheet.Wire.Symbol.Symbols
+    |> List.find(fun sym -> sym.Component.Label = label)
 
 
 ///Returns True if a wire is streightened.
@@ -65,13 +61,26 @@ let calculateOffset (wire: Wire) (sheet: SheetT.Model) =
     |> (fun visSegs -> if List.length visSegs = 3 then visSegs[1] else XYPos.zero)
 
 
-
 ///Returns a list of the potential wire if there are no straight wires already.
 let listPotentialWires (wires: list<Wire> ) (sheet: SheetT.Model) =
     let streightWires = wires |> List.exists (fun wire -> streightenedWire wire sheet)
     if streightWires = false
     then wires |> List.filter (fun wire -> straighteningPotentialWire wire sheet)
     else []
+
+let updateSheetWires (sheet: SheetT.Model) = 
+    let wList = (Map.toList >> List.map snd) sheet.Wire.Wires
+    List.fold (fun sheet wire -> 
+                    let newWire = BusWireRoute.updateWire sheet.Wire wire true
+                    Optic.set (SheetT.wireOf_ newWire.WId) newWire sheet) sheet wList
+
+
+//Write a  function that changes the position of the symbol according rhe first potential wire
+let tryLeastOffsetWire (sheet: SheetT.Model) (wires: list<Wire> ) =
+    List.sortBy (fun wire -> 
+                    let offset = calculateOffset wire sheet
+                    abs(offset.X) + abs(offset.Y)) wires
+    |> List.tryItem 0
 
 
 //Write a  function that changes the position of the symbol according rhe first potential wire
@@ -83,11 +92,8 @@ let getPotentialWireOffset (sheet: SheetT.Model) (wires: list<Wire> ) =
         // calculateOffset firstWire sheet
         List.map (fun wire -> calculateOffset wire sheet) wires
         |> List.sortBy (fun pos -> abs(pos.X) + abs(pos.Y))
-        |> (fun posList -> 
-                printfn $"{posList}"
-                posList)
         |> List.item 0
-    
+
 
 let getWiresFromPort (sheet: SheetT.Model) (port: Port) (wireInputPort: bool) =
             sheet.Wire.Wires
@@ -113,21 +119,67 @@ let allWires1PortSym (sym: Symbol) (sheet: SheetT.Model)=
             let o = List.item 0  sym.Component.OutputPorts
             let wires = getWiresFromPort sheet o false
             wires
-        
-/// VERY IMPORTANT THAT YOU CHECK THAT THE SYMBOL HAS ONLY ONE PORT
-let align1PortSymbol (onePortSym: Symbol) (sheet: SheetT.Model)= // (offsetSign: +/-)
+
+
+let alignPortFlip (wire: Wire ) (onePortSym: Symbol) (sheet: SheetT.Model) = 
+
+    let sourcePort, targetPort = 
+        match wire.OutputPort, wire.InputPort with
+        | OutputPortId(source), InputPortId(target) -> source, target
+
+    let getPortEdge (pId: string) =
+        let otherSymbol = BlockHelpers.getSymbol sheet.Wire.Symbol pId
+        Map.find pId otherSymbol.PortMaps.Orientation 
+    
+    let rotateSymAccPortEdge (otherEdge:Edge) (edge:Edge) = 
+        if otherEdge = edge
+        then 
+            onePortSym
+            |> RotateScale.rotateSymbolInBlock Rotation.Degree90 (Symbol.getRotatedSymbolCentre onePortSym)
+            |> RotateScale.rotateSymbolInBlock Rotation.Degree90 (Symbol.getRotatedSymbolCentre onePortSym)
+        else onePortSym  
+
+    match Map.tryFind sourcePort onePortSym.PortMaps.Orientation, 
+        Map.tryFind targetPort onePortSym.PortMaps.Orientation with
+    | Some (edge), None -> 
+        let otherEdge = getPortEdge targetPort
+        rotateSymAccPortEdge otherEdge edge
+
+    | None, Some(edge) -> 
+        let otherEdge = getPortEdge sourcePort
+        rotateSymAccPortEdge otherEdge edge
+    | _ -> onePortSym
+
+let flipSymbols (sheet: SheetT.Model) (onePortSymbols: list<Symbol>) = 
+    onePortSymbols
+    |> List.map (fun sym -> sym, allWires1PortSym sym sheet)
+    |> List.map (fun (sym, wires) -> 
+                    tryLeastOffsetWire sheet wires
+                    |> Option.map(fun wire -> alignPortFlip wire sym sheet)
+                    |> Option.defaultValue sym)
+    |> List.fold (fun sheet sym -> Optic.set (SheetT.symbolOf_ sym.Id) sym sheet) sheet
+    |> updateSheetWires
+
+
+let alignOnePortSymbol (onePortSymId: ComponentId) (sheet: SheetT.Model)= // (offsetSign: +/-)
+    let onePortSym = sheet.Wire.Symbol.Symbols[onePortSymId]
+
     let portId = Map.toList onePortSym.PortMaps.Orientation |> List.item 0 |> fst
     let offsetSign = changeOffsetSign onePortSym portId
     let potentialList = 
         sheet
         |> allWires1PortSym onePortSym
         |> listPotentialWires 
-    sheet
-    |> potentialList 
-    |> getPotentialWireOffset sheet
-    |> (fun offset -> BlockHelpers.moveSymbol {X = offset.X * offsetSign; Y = offset.Y * offsetSign} onePortSym)
-    // |> (fun newSym -> Optic.set (SheetT.symbolOf_ onePortSym.Id) newSym sheet)
-    // |> SheetUpdateHelpers.updateBoundingBoxes
+
+    let leastOffsetWire = 
+        sheet
+        |> potentialList 
+        |> tryLeastOffsetWire sheet
+
+    leastOffsetWire
+    |> Option.map (fun wire -> calculateOffset wire sheet)
+    |> Option.map (fun offset -> BlockHelpers.moveSymbol {X = offset.X * offsetSign; Y = offset.Y * offsetSign} onePortSym)
+    |> Option.defaultValue onePortSym
 
 
 /// <summary>
@@ -142,8 +194,9 @@ let rerouteWires (newcIdList: List<ComponentId>) (symbolMovedBy: XYPos) (sheet: 
     BusWireRoute.updateWires sheet.Wire newcIdList symbolMovedBy
     |> (fun newWireModel -> Optic.set SheetT.wire_ newWireModel sheet)
 
-let scaleSymbol (newVertical: float option) (newHorizontal: float option) (symbol: Symbol) (sheet: SheetT.Model) =
+let scaleSymbol (newVertical: float option) (newHorizontal: float option) (symId: ComponentId) (sheet: SheetT.Model) =
     let symbols = sheet.Wire.Symbol.Symbols
+    let symbol = symbols[symId]
 
     let newSymbol = {symbol with VScale = newVertical; HScale = newHorizontal}
     // let newComp = {symbol.Component with H = symbol.Component.H * newVertical; W = symbol.Component.W * newHorizontal}
@@ -256,51 +309,54 @@ let checkSymbolOverlap (symId: ComponentId) (sheet: SheetT.Model) =
     let otherSymsBB = (Map.toList >> List.map snd) otherSymBBMap
     List.exists (fun otherSymBB -> BlockHelpers.overlap2DBox otherSymBB symBB) otherSymsBB
 
-let updateSheetWires (sheet: SheetT.Model) = 
-    let wList = (Map.toList >> List.map snd) sheet.Wire.Wires
-    List.fold (fun sheet wire -> 
-                    let newWire = BusWireRoute.updateWire sheet.Wire wire true
-                    Optic.set (SheetT.wireOf_ newWire.WId) newWire sheet) sheet wList
-
 
 ///In this phase all singly-connected components are aligned and their wires are streightend.
-let firstPhaseStraightening (sheet: SheetT.Model) =
-    let initialOverlap = countIntersectedSymbols sheet
-    let singlePortComponents = 
-        sheet.Wire.Symbol.Symbols
-        |> Map.toList 
-        |> List.filter (fun (_, sym) -> checkIfSinglePortComponent sym)
+let alignOnePortSymbolsPhase (sheet: SheetT.Model) =
 
+    let singlePortSymbols (sheetToCheck: SheetT.Model) = 
+        symbolList sheetToCheck
+        |> List.filter (fun sym -> checkIfSinglePortComponent sym)
 
-    let changedSymbolList = 
-        singlePortComponents
-        |> List.map (fun (_, sym) -> align1PortSymbol sym sheet)
-    changedSymbolList
-    |> List.fold (fun sheet newSym -> 
-                        let newSheet = Optic.set (SheetT.symbolOf_ newSym.Id) newSym sheet |> SheetUpdateHelpers.updateBoundingBoxes
-                        if countIntersectedSymbols newSheet > initialOverlap
-                        then sheet
-                        else newSheet) sheet
-    // Fix bounding boxes update logic - needs to be updated after each symbol is moved on the sheet
-    |> rerouteWires (List.map (fun sym -> sym.Id) changedSymbolList) XYPos.zero
-    
-// if countIntersectedSymbols newSheet > initialOverlap
+    let flippedSymbolSheet = 
+        singlePortSymbols sheet
+        |> flipSymbols sheet
+
+    let alignedSymbolList = 
+        flippedSymbolSheet
+        |> singlePortSymbols
+        |> List.map (fun sym -> alignOnePortSymbol sym.Id flippedSymbolSheet)
+
+    let alignSymbolFolder (sheet: SheetT.Model) (newSym: Symbol) =
+        let newSheet = 
+            Optic.set (SheetT.symbolOf_ newSym.Id) newSym sheet 
+            |> SheetUpdateHelpers.updateBoundingBoxes
+        if checkSymbolOverlap newSym.Id newSheet
+        then sheet 
+        else newSheet
+
+    alignedSymbolList
+    |> List.fold alignSymbolFolder flippedSymbolSheet
+    |> rerouteWires (List.map (fun sym -> sym.Id) alignedSymbolList) XYPos.zero
 
 /// Phase where scaling and moving is done to a pair of multiport symbols (works for custom and non-custom) in order
 ///  to streighten the wires between them.
-let secondPhaseStraightening (sheet: SheetT.Model)=
+let scaleSymbolAlignPhase (sheet: SheetT.Model) =
+
+    let scaleSymbolFolder (sheet: SheetT.Model) (syms: Symbol * Symbol) = 
+        let scaleValue = calcPortRatio (fst syms) (snd syms)
+        let scaledModel = 
+            scaleSymbol (Some scaleValue) None (snd syms).Id sheet
+            |> rerouteWires [(snd syms).Id] XYPos.zero
+        // let newSym = alignOnePortSymbol (snd syms).Id scaledModel
+        // Optic.set (SheetT.symbolOf_ newSym.Id) newSym scaledModel
+        // |> rerouteWires [newSym.Id] XYPos.zero
+        scaledModel
+
     connectedSymbolsMap sheet
     |> Map.filter (fun _ value -> List.length value > 1 )
     |> Map.toList 
     |> List.map fst
-    |> List.fold (fun sheet syms -> 
-                    let scaleValue = calcPortRatio (fst syms) (snd syms)
-                    let scaledModel = 
-                        scaleSymbol (Some scaleValue) None (snd syms) sheet
-                        |> rerouteWires [(snd syms).Id] XYPos.zero
-                    let newSym = align1PortSymbol(fst syms) scaledModel
-                    Optic.set (SheetT.symbolOf_ newSym.Id) newSym scaledModel
-                    |> rerouteWires [newSym.Id] XYPos.zero) sheet
+    |> List.fold scaleSymbolFolder sheet
     |> updateSheetWires
 
     
@@ -315,32 +371,11 @@ let extractMoreInput1OutputPortSymbolsSorted (sheet: SheetT.Model)=
     |> List.sortBy (fun sym -> sym.Pos.X)
     |> List.rev
 
-let  findInputSymbolsFromSymbol (symbol:Symbol) (sheet:SheetT.Model) =
+let findInputSymbolsFromSymbol (symbol:Symbol) (sheet:SheetT.Model) =
     symbol.Component.InputPorts 
     |> List.collect (fun port -> getWiresFromPort sheet port true)
     |> List.map (BlockHelpers.getSourceSymbol sheet.Wire)
     |> List.distinct
-
-// |> List.map (fun wire -> match wire.OutputPort with | OutputPortId(id) -> id)
-
-//let inline getSymbol (model: SymbolT.Model) (portId: string) =
-
-
-// let thirdPhase (sheet: SheetT.Model) = 
-
-//     extractMoreInput1OutputPortSymbolsSorted sheet
-//     |> List.map (fun sym -> sym, (getOutputPortWires sym.Id sheet)[0])
-//     |> Map.ofList
-//     |> Map.filter (fun _sym wire -> straighteningPotentialWire wire sheet)
-//     |> Map.map (fun _sym wire -> calculateOffset wire sheet)
-//     |> Map.map (fun sym unsignedOffset -> 
-//                     let sign = (changeOffsetSign sym sym.Component.OutputPorts[0].Id)
-//                     {X = unsignedOffset.X * sign; Y = unsignedOffset.Y * sign})
-//     |> Map.fold (fun sheet sym offset -> 
-//                     let newSym = BlockHelpers.moveSymbol offset sym
-//                     Optic.set (SheetT.symbolOf_ sym.Id) newSym sheet
-//                     |> rerouteWires [sym.Id] offset
-//                     |> SheetUpdateHelpers.updateBoundingBoxes) sheet
 
 //
 let alignSymbolFolder (sheet: SheetT.Model) (symId: ComponentId) =
@@ -357,34 +392,19 @@ let alignSymbolFolder (sheet: SheetT.Model) (symId: ComponentId) =
                                         //printfn $"{sym.Component.Label}"
                                         BlockHelpers.moveSymbol signedOffset sym) (symbol :: inputConnectedSymbol)
         List.fold (fun sheet sym -> 
-                    printfn $"{sym.Component.Label}'s overlap : {failOnSymbolIntersectsSymbol sheet}"
                     let newSheet = Optic.set (SheetT.symbolOf_ sym.Id) sym sheet |> SheetUpdateHelpers.updateBoundingBoxes
                     if checkSymbolOverlap sym.Id newSheet
-                    then sheet // |> SheetUpdateHelpers.updateBoundingBoxes
+                    then sheet
                     else 
                         newSheet
                         |> rerouteWires [sym.Id] signedOffset) sheet newSymbols
-        // |> SheetUpdateHelpers.updateBoundingBoxes
     | None -> sheet
-    
-
-let getSymFromLabel (label: string) (sheet: SheetT.Model) = 
-    (Map.toList >> List.map snd) sheet.Wire.Symbol.Symbols
-    |> List.find(fun sym -> sym.Component.Label = label)
-
-
-// let thirdPhase (sheet: SheetT.Model) =
-//     let newSheet =
-//         extractMoreInput1OutputPortSymbolsSorted sheet
-//         |> List.map (fun sym -> sym.Id)
-//         |> List.fold alignSymbolFolder sheet
-//     let wList = (Map.toList >> List.map snd) sheet.Wire.Wires
-//     List.fold (fun sheet wire -> 
-//                     let newWire = BusWireRoute.updateWire sheet.Wire wire true
-//                     Optic.set (SheetT.wireOf_ newWire.WId) newWire sheet) newSheet wList
 
 let thirdPhase (sheet: SheetT.Model) =
     extractMoreInput1OutputPortSymbolsSorted sheet
     |> List.map (fun sym -> sym.Id)
     |> List.fold alignSymbolFolder sheet
     |> updateSheetWires
+
+// Check that the port of the singly connected component is opposite? to its target connection
+// If not, rotate single until port face each other

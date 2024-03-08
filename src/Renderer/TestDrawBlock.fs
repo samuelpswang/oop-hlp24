@@ -235,8 +235,30 @@ module HLPTick3 =
         
 
         // Rotate a symbol
-        let rotateSymbol (symLabel: string) (rotate: Rotation) (model: SheetT.Model) : (SheetT.Model) =
-            failwithf "Not Implemented"
+        let rotateSymbol (rotation: Rotation) (label: string) (sheet: SheetT.Model): SheetT.Model =
+            let symMap = sheet.Wire.Symbol.Symbols
+            let symbol =
+                (Map.toList >> List.map snd) symMap
+                |> List.find (fun sym -> sym.Component.Label = label)
+
+            let symCentre = Symbol.getRotatedSymbolCentre symbol // If not rotated, just returns the correct centre, but accounts for rotated case.
+            let symId = ComponentId symbol.Component.Id
+
+            let rotatedSymbol =
+                symMap
+                |> Map.tryFind symId
+                |> Option.map (fun sym -> RotateScale.rotateSymbolInBlock rotation symCentre sym) // The symbol is the only one in the block
+
+            match rotatedSymbol with
+            | Some (sym) ->
+                let newSymbols =
+                    (symId, sym)
+                    |> symMap.Add
+                Optic.set SheetT.symbols_ newSymbols sheet
+                |> SheetUpdateHelpers.updateBoundingBoxes // Need to recalculate bounding boxes because rotation changes them
+            | None ->
+                printf $"Given symbol {symbol.Component.Label} does not exist on the sheet. Returning sheet before change."
+                sheet
 
         // Flip a symbol
         let flipSymbol (symLabel: string) (flip: SymbolT.FlipType) (model: SheetT.Model) : (SheetT.Model) =
@@ -338,6 +360,106 @@ module HLPTick3 =
         |> getOkOrFail
 
 
+    let twoMuxTest (_: XYPos) = 
+        initSheetModel
+        |> Builder.placeSymbol "AND" (GateN(And, 2)) middleOfSheet
+        |> Result.bind(Builder.placeSymbol "I1" (Mux2) {X = middleOfSheet.X - 150.0; Y = middleOfSheet.Y - 75.0})
+        |> Result.bind(Builder.placeSymbol "I2" (Mux2) {X = middleOfSheet.X - 150.0; Y = middleOfSheet.Y + 75.0})
+        |> Result.bind(Builder.placeWire (portOf "I1" 0) (portOf "AND" 0))
+        |> Result.bind(Builder.placeWire (portOf "I2" 0) (portOf "AND" 1))
+        |> getOkOrFail
+        |> SheetBeautifyD1.thirdPhase
+
+    let andGateTest (_: XYPos) = 
+        initSheetModel
+        |> Builder.placeSymbol "AND" Mux2 middleOfSheet
+        |> Result.bind(Builder.placeSymbol "I1" (Input1(1, None)) {X = middleOfSheet.X - 150.0; Y = middleOfSheet.Y - 75.0})
+        |> Result.bind(Builder.placeSymbol "I2" (Input1(1, None)) {X = middleOfSheet.X - 150.0; Y = middleOfSheet.Y + 75.0})
+        |> getOkOrFail
+        |> rotateSymbol Rotation.Degree90 "I1"
+        |> rotateSymbol Rotation.Degree90 "I1"
+        |> Builder.placeWire (portOf "I1" 0) (portOf "AND" 0)
+        |> Result.bind(Builder.placeWire (portOf "I2" 0) (portOf "AND" 1))
+        |> getOkOrFail
+        |> SheetBeautifyD1.alignOnePortSymbolsPhase
+
+
+    // Defined custom component
+    let customMain =
+        {
+            Name = "MAIN";
+            InputLabels = [("A", 1); ("B", 1); ("S2", 1); ("S1", 1)];
+            OutputLabels = [("E", 1); ("F", 1); ("G", 1)];
+            Form = None
+            Description = None
+        }
+
+
+    // Aligning and scaling of circuits with custom components
+    let customComponentScaling (_: XYPos) =
+        initSheetModel
+        |> Builder.placeSymbol "MAIN1" (Custom(customMain)) middleOfSheet
+        |> Result.bind (Builder.placeSymbol "MAIN2" (Custom(customMain)) {middleOfSheet with X = middleOfSheet.X + 200.0})
+        |> Result.bind (Builder.placeWire (portOf "MAIN1" 0) (portOf "MAIN2" 0))
+        |> Result.bind (Builder.placeWire (portOf "MAIN1" 1) (portOf "MAIN2" 1))
+        |> Result.bind (Builder.placeWire (portOf "MAIN1" 2) (portOf "MAIN2" 2))
+        |> TestLib.getOkOrFail
+        |> SheetBeautifyD1.scaleSymbolAlignPhase
+    
+    let testTripleMUX (_: XYPos) = 
+        initSheetModel
+        |> Builder.placeSymbol "MUX2" Mux2 middleOfSheet
+        |> Result.bind (Builder.placeSymbol "MUX1" Mux2 {X = middleOfSheet.X - 175.0; Y = middleOfSheet.Y - 40.0})
+        |> Result.bind (Builder.placeSymbol "A" (Input1(1, None)) {X = middleOfSheet.X - 300.0; Y = middleOfSheet.Y - 68.4})
+        |> Result.bind (Builder.placeSymbol "B" (Input1 (1, None)) {X = middleOfSheet.X - 300.0; Y = middleOfSheet.Y})
+        |> Result.bind (Builder.placeSymbol "S2" (Input1 (1, None)) {X = middleOfSheet.X - 300.0; Y = middleOfSheet.Y + 100.0})
+        |> Result.bind (Builder.placeSymbol "MUX3" Mux2 {X = middleOfSheet.X + 150.0; Y = middleOfSheet.Y + 125.0})
+        |> Result.bind(Builder.placeSymbol "S1" (Input1(1, None)) {X = middleOfSheet.X - 250.0; Y = middleOfSheet.Y + 200.0})
+        |> Result.bind (Builder.placeWire (portOf "A" 0) (portOf "MUX1" 0))
+        |> Result.bind (Builder.placeWire (portOf "B" 0) (portOf "MUX1" 1))
+        |> Result.bind (Builder.placeWire (portOf "S2" 0) (portOf "MUX2" 2))
+        |> Result.bind (Builder.placeWire (portOf "MUX1" 0) (portOf "MUX2" 0))
+        |> Result.bind (Builder.placeWire (portOf "MUX2" 0) (portOf "MUX3" 0))
+        |> Result.bind (Builder.placeWire (portOf "S1" 0) (portOf "MUX1" 2))
+        |> Result.bind (Builder.placeWire (portOf "S1" 0) (portOf "MUX2" 1))
+        |> Result.bind (Builder.placeWire (portOf "S1" 0) (portOf "MUX3" 1))
+        |> TestLib.getOkOrFail
+        |> SheetBeautifyD1.thirdPhase
+        |> SheetBeautifyD1.alignOnePortSymbolsPhase
+        |> SheetBeautifyD1.alignOnePortSymbolsPhase
+
+
+    // Circuit emulating results from orderFlip, for compatibility with the other beautify algorithms.
+    let orderFlipTest (_: XYPos) =
+        initSheetModel
+        |> Builder.placeSymbol "S1" (Input1(1, None)) {X = middleOfSheet.X - 275.0; Y = middleOfSheet.Y - 40.0}
+        |> Result.bind (Builder.placeSymbol "S2" (Input1(1, None)) {X = middleOfSheet.X - 275.0; Y = middleOfSheet.Y + 60.0})
+        |> Result.bind (Builder.placeSymbol "MUX2" (Mux2) middleOfSheet)
+        |> Result.bind (Builder.placeSymbol "MUX1" (Mux2) {X = middleOfSheet.X - 150.0; Y = middleOfSheet.Y - 150.0})
+        |> Result.bind (Builder.placeSymbol "G1" (GateN(And, 2)) {X = middleOfSheet.X + 150.0; Y = middleOfSheet.Y - 160.0})
+        |> Result.bind (Builder.placeWire (portOf "S1" 0) (portOf "MUX2" 1))
+        |> Result.bind (Builder.placeWire (portOf "S2" 0) (portOf "MUX2" 2))
+        |> Result.bind (Builder.placeWire (portOf "MUX1" 0) (portOf "MUX2" 0))
+        |> Result.bind (Builder.placeWire (portOf "MUX1" 0) (portOf "G1" 0))
+        |> Result.bind (Builder.placeWire (portOf "MUX2" 0) (portOf "G1" 1))
+        |> TestLib.getOkOrFail
+        |> SheetBeautifyD1.thirdPhase
+        |> SheetBeautifyD1.alignOnePortSymbolsPhase
+        |> SheetBeautifyD1.alignOnePortSymbolsPhase
+
+    // Circuit with multiple connections between the same two components
+    let scalingMultipleConnections (_: XYPos) =
+        initSheetModel
+        |> Builder.placeSymbol "DEMUX" Demux4 middleOfSheet
+        |> Result.bind (Builder.placeSymbol "AND" (GateN(And, 3)) {middleOfSheet with X = middleOfSheet.X + 200.0})
+        |> Result.bind (Builder.placeWire (portOf "DEMUX" 0) (portOf "AND" 0))
+        |> Result.bind (Builder.placeWire (portOf "DEMUX" 1) (portOf "AND" 1))
+        |> TestLib.getOkOrFail
+        |> SheetBeautifyD1.scaleSymbolAlignPhase
+
+    
+
+
 
 //------------------------------------------------------------------------------------------------//
 //-------------------------Example assertions used to test sheets---------------------------------//
@@ -429,8 +551,8 @@ module HLPTick3 =
                 "Horizontally positioned AND + DFF: fail on symbols intersect"
                 firstSample
                 horizLinePositions
-                makeTest1Circuit
-                Asserts.failOnSymbolIntersectsSymbol
+                customComponentScaling
+                (Asserts.failOnSampleNumber 0)
                 dispatch
             |> recordPositionInTest testNum dispatch
 
@@ -440,8 +562,8 @@ module HLPTick3 =
                 "Horizontally positioned AND + DFF: fail all tests"
                 firstSample
                 horizLinePositions
-                makeTest1Circuit
-                Asserts.failOnAllTests
+                testTripleMUX
+                (Asserts.failOnSampleNumber 0)
                 dispatch
             |> recordPositionInTest testNum dispatch
 
