@@ -368,7 +368,7 @@ module HLPTick3 =
         |> Result.bind(Builder.placeWire (portOf "I1" 0) (portOf "AND" 0))
         |> Result.bind(Builder.placeWire (portOf "I2" 0) (portOf "AND" 1))
         |> getOkOrFail
-        |> SheetBeautifyD1.thirdPhase
+        |> SheetBeautifyD1.alignConstrainedComponentsPhase
 
     let andGateTest (_: XYPos) = 
         initSheetModel
@@ -399,7 +399,7 @@ module HLPTick3 =
     let customComponentScaling (_: XYPos) =
         initSheetModel
         |> Builder.placeSymbol "MAIN1" (Custom(customMain)) middleOfSheet
-        |> Result.bind (Builder.placeSymbol "MAIN2" (Custom(customMain)) {middleOfSheet with X = middleOfSheet.X + 200.0})
+        |> Result.bind (Builder.placeSymbol "MAIN2" (Custom(customMain)) {X = middleOfSheet.X + 200.0; Y = middleOfSheet.Y - 100.0})
         |> Result.bind (Builder.placeWire (portOf "MAIN1" 0) (portOf "MAIN2" 0))
         |> Result.bind (Builder.placeWire (portOf "MAIN1" 1) (portOf "MAIN2" 1))
         |> Result.bind (Builder.placeWire (portOf "MAIN1" 2) (portOf "MAIN2" 2))
@@ -424,7 +424,7 @@ module HLPTick3 =
         |> Result.bind (Builder.placeWire (portOf "S1" 0) (portOf "MUX2" 1))
         |> Result.bind (Builder.placeWire (portOf "S1" 0) (portOf "MUX3" 1))
         |> TestLib.getOkOrFail
-        |> SheetBeautifyD1.thirdPhase
+        |> SheetBeautifyD1.alignConstrainedComponentsPhase
         |> SheetBeautifyD1.alignOnePortSymbolsPhase
         |> SheetBeautifyD1.alignOnePortSymbolsPhase
 
@@ -443,7 +443,7 @@ module HLPTick3 =
         |> Result.bind (Builder.placeWire (portOf "MUX1" 0) (portOf "G1" 0))
         |> Result.bind (Builder.placeWire (portOf "MUX2" 0) (portOf "G1" 1))
         |> TestLib.getOkOrFail
-        |> SheetBeautifyD1.thirdPhase
+        |> SheetBeautifyD1.alignConstrainedComponentsPhase
         |> SheetBeautifyD1.alignOnePortSymbolsPhase
         |> SheetBeautifyD1.alignOnePortSymbolsPhase
 
@@ -551,7 +551,7 @@ module HLPTick3 =
                 "Horizontally positioned AND + DFF: fail on symbols intersect"
                 firstSample
                 horizLinePositions
-                customComponentScaling
+                scalingMultipleConnections
                 (Asserts.failOnSampleNumber 0)
                 dispatch
             |> recordPositionInTest testNum dispatch
