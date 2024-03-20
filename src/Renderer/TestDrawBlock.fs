@@ -1,5 +1,8 @@
 ﻿module TestDrawBlock
 open GenerateData
+open SymbolView
+open Symbol
+open SymbolResizeHelpers
 open Elmish
 
 
@@ -108,6 +111,9 @@ module HLPTick3 =
     let maxSheetCoord = Sheet.Constants.defaultCanvasSize
     let middleOfSheet = {X=maxSheetCoord/2.;Y=maxSheetCoord/2.}
 
+    let diffFromMiddle (diff: XYPos) =
+        middleOfSheet - diff
+
     /// Used throughout to compare labels since these are case invariant "g1" = "G1"
     let caseInvariantEqual str1 str2 =
         String.toUpper str1 = String.toUpper str2
@@ -149,35 +155,29 @@ module HLPTick3 =
             | IsEven, BusWireT.Vertical | IsOdd, BusWireT.Horizontal -> {X=0.; Y=seg.Length}
             | IsEven, BusWireT.Horizontal | IsOdd, BusWireT.Vertical -> {X=seg.Length; Y=0.}
 
-        /// Return the list of segment vectors with 3 vectors coalesced into one visible equivalent
-        /// wherever this is possible
-        let rec coalesce (segVecs: XYPos list)  =
-            match List.tryFindIndex (fun segVec -> segVec =~ XYPos.zero) segVecs[1..segVecs.Length-2] with          
-            | Some zeroVecIndex ->
-                let index = zeroVecIndex + 1 // base index as it should be on full segVecs
+        /// Return a list of segment vectors with 3 vectors coalesced into one visible equivalent
+        /// if this is possible, otherwise return segVecs unchanged.
+        /// Index must be in range 1..segVecs
+        let tryCoalesceAboutIndex (segVecs: XYPos list) (index: int)  =
+            if segVecs[index] =~ XYPos.zero
+            then
                 segVecs[0..index-2] @
                 [segVecs[index-1] + segVecs[index+1]] @
                 segVecs[index+2..segVecs.Length - 1]
-                |> coalesce
-            | None -> segVecs
-     
+            else
+                segVecs
+
         wire.Segments
         |> List.mapi getSegmentVector
-        |> coalesce
-                
+        |> (fun segVecs ->
+                (segVecs,[1..segVecs.Length-2])
+                ||> List.fold tryCoalesceAboutIndex)
 
 
 //------------------------------------------------------------------------------------------------------------------------//
 //------------------------------functions to build issue schematics programmatically--------------------------------------//
 //------------------------------------------------------------------------------------------------------------------------//
     module Builder =
-
-
-                
-
-            
-
-
 
         /// Place a new symbol with label symLabel onto the Sheet with given position.
         /// Return error if symLabel is not unique on sheet, or if position is outside allowed sheet coordinates (0 - maxSheetCoord).
@@ -199,9 +199,6 @@ module HLPTick3 =
                 |> SheetUpdateHelpers.updateBoundingBoxes // could optimise this by only updating symId bounding boxes
                 |> Ok
         
-
-
-    
         /// Place a new symbol onto the Sheet with given position and scaling (use default scale if this is not specified).
         /// The ports on the new symbol will be determined by the input and output components on some existing sheet in project.
         /// Return error if symLabel is not unique on sheet, or ccSheetName is not the name of some other sheet in project.
@@ -231,22 +228,58 @@ module HLPTick3 =
                         Description = None
                     }
                 placeSymbol symLabel (Custom ccType) position model
-            
-        
 
         // Rotate a symbol
         let rotateSymbol (symLabel: string) (rotate: Rotation) (model: SheetT.Model) : (SheetT.Model) =
-            failwithf "Not Implemented"
+            
+            // 1. Find the symbol in the model by symLabel.
+            //let foundSymbol = model.Symbols |> List.tryFind (fun sym -> sym.Label = symLabel)
+            // 2. Apply the rotation to the symbol. This might involve updating the symbol's rotation property or transforming its coordinates.
+            // 3. Return the updated model with the rotated symbol.
+
+            let symbolsMap = model.Wire.Symbol.Symbols //fine
+            let getSymbol = //can use symLabel as para
+                mapValues symbolsMap
+                |> Array.tryFind (fun sym -> caseInvariantEqual sym.Component.Label symLabel)
+                |> function | Some x -> Ok x | None -> Error "Can't find symbol with label '{symPort.Label}'"
+
+            match getSymbol with
+            | Ok symbol ->
+                let rotatedSymbol = SymbolResizeHelpers.rotateSymbol rotate symbol
+                // Create a new map with the rotated symbol. Assuming Symbol has a unique identifier or label for key.
+                let updatedSymbolsMap = Map.add symbol.Id rotatedSymbol symbolsMap
+                
+                //let newModel = { model with model.Wire.Symbol.Symbols = updatedSymbols }
+                { model with Wire = { model.Wire with Symbol = { model.Wire.Symbol with Symbols = updatedSymbolsMap } } }
+
+            | _ -> model
 
         // Flip a symbol
         let flipSymbol (symLabel: string) (flip: SymbolT.FlipType) (model: SheetT.Model) : (SheetT.Model) =
-            failwithf "Not Implemented"
+
+            let symbolsMap = model.Wire.Symbol.Symbols //fine
+            let getSymbol = //can use symLabel as para
+                mapValues symbolsMap
+                |> Array.tryFind (fun sym -> caseInvariantEqual sym.Component.Label symLabel)
+                |> function | Some x -> Ok x | None -> Error "Can't find symbol with label '{symPort.Label}'"
+
+            match getSymbol with
+            | Ok symbol ->
+                let flippedSymbol = SymbolResizeHelpers.flipSymbol flip symbol
+                // Create a new map with the rotated symbol. Assuming Symbol has a unique identifier or label for key.
+                let updatedSymbolsMap = Map.add symbol.Id flippedSymbol symbolsMap
+    
+                //let newModel = { model with model.Wire.Symbol.Symbols = updatedSymbols }
+                { model with Wire = { model.Wire with Symbol = { model.Wire.Symbol with Symbols = updatedSymbolsMap } } }
+
+            | _ -> model
 
         /// Add a (newly routed) wire, source specifies the Output port, target the Input port.
         /// Return an error if either of the two ports specified is invalid, or if the wire duplicates and existing one.
         /// The wire created will be smart routed but not separated from other wires: for a nice schematic
         /// separateAllWires should be run after  all wires are added.
         /// source, target: respectively the output port and input port to which the wire connects.
+        //so take in a current sheet with our components and from (source) and to (target) port and return the sheet with the components but with the wire
         let placeWire (source: SymbolPort) (target: SymbolPort) (model: SheetT.Model) : Result<SheetT.Model,string> =
             let symbols = model.Wire.Symbol.Symbols
             let getPortId (portType:PortType) symPort =
@@ -304,10 +337,10 @@ module HLPTick3 =
             let result =
                 {
                     Name=name;
-                    Samples=samples;
-                    StartFrom = sampleToStartFrom
-                    Assertion = generateAndCheckSheet
-                }
+                    Samples=samples; //samples is a set of circuits we want to test that are part of the test Name
+                    StartFrom = sampleToStartFrom //so which circuit index in the Gen<'a> to start from
+                    Assertion = generateAndCheckSheet //what is the assertion called
+                } //so pass this Test<'a> to runTests which will return a list of all the failed tests (for the given circuits) (empty if all tests passed)
                 |> runTests
             match result.TestErrors with
             | [] -> // no errors
@@ -325,8 +358,15 @@ module HLPTick3 =
     open Builder
     /// Sample data based on 11 equidistant points on a horizontal line
     let horizLinePositions =
-        fromList [-100..20..100]
-        |> map (fun n -> middleOfSheet + {X=float n; Y=0.})
+        fromList [-100..20..100] //so [-100 -80 -60... 60 80 100] passes to map and that returns a gen with Data = l[i % l.Length] |> middleOfSheet + {X=float n; Y=0.},
+        //so pick a value from the l list then use it as X and add to middleOfSheet, so basically adding an X translation through points [-100..20..100] to middleOfSheet for a certain component
+        //so randomize this, maybe use the same map function (or maybe add a threshold to ensure position is at least at threshold and then randomly choose values the list and add in no order
+        |> map (fun n -> middleOfSheet + {X=float n; Y=float n})
+
+        //so given a list [-50..10..50] it is convert to a Gen<'a>, and then map is run on it (go over map and Gen<a'> functions
+    let verticalLinePositions =
+        fromList [-50..10..50]
+        |> map (fun n -> middleOfSheet + {X=0.; Y=float n})
 
     /// demo test circuit consisting of a DFF & And gate
     let makeTest1Circuit (andPos:XYPos) =
@@ -337,6 +377,253 @@ module HLPTick3 =
         |> Result.bind (placeWire (portOf "FF1" 0) (portOf "G1" 0) )
         |> getOkOrFail
 
+///D3 HELPERS
+
+    //maybe use result of this in another genXYPos to check for overlapping
+    let genXYPos lim =
+        //create an initial set of coords
+        let coords =
+            fromList [-lim..20..lim]
+            |> map (fun n -> float n)
+        //make a random pos by picking randomly from these coords using product
+        product (fun x y -> {X=x; Y=y}) coords coords
+
+    //SHOULD PASS AND BE HANDLED BY D3
+    let makeD3TestCircuitEasy (threshold: float) (
+                            sample: {|
+                                FlipMux: SymbolT.FlipType option;
+                                RotMux: Rotation option;
+                                DemuxPos: XYPos;
+                                Mux1Pos: XYPos;
+                                Mux2Pos: XYPos
+                            |}) : SheetT.Model = 
+        //so recreate figure C1 so long wires
+        let s = sample
+        initSheetModel
+        //adding DM1
+        //adding small changes to position of components, changes given by a gen
+        |> placeSymbol "DM1" (Demux4) (middleOfSheet - {X=threshold; Y=0.} + s.DemuxPos)
+        //adding MUX1
+        |> Result.bind (placeSymbol "MUX1" (Mux4) (middleOfSheet + s.Mux1Pos))
+        |> match s.RotMux with
+            | Some rot -> Result.map (rotateSymbol "MUX1" rot) //so if flip is not none hten do result.map else do identity function to pass model as is without flip
+            | None -> id
+        |> match s.FlipMux with
+            | Some flip -> Result.map (flipSymbol "MUX1" flip) //so if flip is not none hten do result.map else do identity function to pass model as is without flip
+            | None -> id
+        |> Result.bind (placeWire (portOf "DM1" 0) (portOf "MUX1" 0))
+        |> Result.bind (placeWire (portOf "DM1" 1) (portOf "MUX1" 1))
+        |> Result.bind (placeWire (portOf "DM1" 2) (portOf "MUX1" 2))
+        |> Result.bind (placeWire (portOf "DM1" 3) (portOf "MUX1" 3))
+        //adding MUX2
+        |> Result.bind (placeSymbol "MUX2" (Mux4) (middleOfSheet + {X=0.; Y=threshold} + s.Mux2Pos))
+        |> Result.bind (placeWire (portOf "DM1" 0) (portOf "MUX2" 0))
+        |> Result.bind (placeWire (portOf "DM1" 1) (portOf "MUX2" 1))
+        |> Result.bind (placeWire (portOf "DM1" 2) (portOf "MUX2" 2))
+        |> Result.bind (placeWire (portOf "DM1" 3) (portOf "MUX2" 3))
+        |> getOkOrFail
+        |> separateAllWires
+
+    //Generate samples for D3 Easy circuit
+    let makeSamplesD3Easy =
+        let rotations = fromList [Some Rotation.Degree90; Some Rotation.Degree270; None]
+        let flips = fromList [Some SymbolT.FlipType.FlipHorizontal; None]
+        genXYPos 100
+        |> product (fun a b -> (a,b)) (genXYPos 100)
+        |> product (fun a b -> (a,b)) rotations
+        |> product (fun a b -> (a,b)) flips
+        |> map (fun (flipMux,(rotMux,(demuxPos, muxPos))) ->
+            {|
+                FlipMux = flipMux;
+                RotMux = rotMux;
+                DemuxPos = demuxPos;
+                Mux1Pos = muxPos;
+                Mux2Pos = muxPos
+            |})
+
+    //VERY DIFFICULT CASE - LIKELY TO FAIL
+    let makeD3TestCircuitHard (threshold: float) (
+                            sample: {|
+                                FlipMux: SymbolT.FlipType option;
+                                RotMux: Rotation option;
+                                AndPos: XYPos;
+                                OrPos: XYPos;
+                                XorPos: XYPos;
+                                MuxPos: XYPos
+                            |}) : SheetT.Model = 
+        //so recreate figure C1 so long wires
+        let s = sample
+        initSheetModel
+        //adding MUX1
+        //adding small changes to position of components, changes given by a gen
+        |> placeSymbol "MUX1" (Mux2) (middleOfSheet - {X=threshold; Y=0.} + s.MuxPos)
+        |> match s.RotMux with
+            | Some rot -> Result.map (rotateSymbol "MUX1" rot) //so if flip is not none hten do result.map else do identity function to pass model as is without flip
+            | None -> id
+        |> match s.FlipMux with
+            | Some flip -> Result.map (flipSymbol "MUX1" flip) //so if flip is not none hten do result.map else do identity function to pass model as is without flip
+            | None -> id
+        //adding OR1
+        |> Result.bind (placeSymbol "OR1" (GateN(Or, 2)) (middleOfSheet + s.OrPos))
+        |> Result.bind (placeWire (portOf "MUX1" 0) (portOf "OR1" 0))
+        |> Result.bind (placeWire (portOf "MUX1" 0) (portOf "OR1" 1))
+        //adding AND1
+        |> Result.bind (placeSymbol "AND1" (GateN(And, 2)) (middleOfSheet + {X=threshold; Y=threshold} + s.AndPos))
+        |> Result.bind (placeWire (portOf "OR1" 0) (portOf "AND1" 0))
+        |> Result.bind (placeWire (portOf "OR1" 0) (portOf "AND1" 1))
+        |> Result.bind (placeWire (portOf "OR1" 0) (portOf "MUX1" 2))
+        |> Result.bind (placeWire (portOf "AND1" 0) (portOf "MUX1" 1))
+        //adding XOR1
+        |> Result.bind (placeSymbol "XOR1" (GateN(Xor, 2)) (middleOfSheet + {X=threshold; Y=0.} + s.XorPos))
+        |> Result.bind (placeWire (portOf "AND1" 0) (portOf "XOR1" 0))
+        |> Result.bind (placeWire (portOf "AND1" 0) (portOf "XOR1" 1))
+        |> Result.bind (placeWire (portOf "XOR1" 0) (portOf "MUX1" 0))
+        |> getOkOrFail
+        |> separateAllWires
+
+    //Generate samples for D3 Hard circuit
+    let makeSamplesD3Hard =
+        let rotations = fromList [Some Rotation.Degree90; Some Rotation.Degree270; None]
+        let flips = fromList [Some SymbolT.FlipType.FlipHorizontal; None]
+        genXYPos 100
+        |> product (fun a b -> (a,b)) (genXYPos 100)
+        |> product (fun a b -> (a,b)) rotations
+        |> product (fun a b -> (a,b)) flips
+        |> map (fun (flipMux,(rotMux,(orPos, muxPos))) ->
+            {|
+                FlipMux = flipMux;
+                RotMux = rotMux;
+                AndPos = muxPos;
+                OrPos = orPos;
+                XorPos = orPos;
+                MuxPos = muxPos
+            |})
+    
+    type componentInfo = {
+        Label: string
+        CompType: ComponentType
+    }
+
+    type connectionInfo = {
+        SourceCompLabel: string
+        SourceCompPort: int
+        TargetCompLabel: string
+        TargetCompPort: int
+    }
+
+    //should return the position of the component such that it is > threshold dist relative to all other components on the sheet
+    //so probably pass in my sheet, current component, threshold, and then find a pos in the sheet that's more than threshold dist from all other components
+    let generatePosition (model: SheetT.Model) (threshold:float) (isGreaterThanThreshold: bool): XYPos =
+        let initPosition = middleOfSheet
+
+        let getExistingPositions =
+            model.Wire.Symbol.Symbols
+            |> Map.toList
+            |> List.map (fun (_, sym) -> sym.Pos)
+
+        let rec findPosition (position: XYPos) =
+
+            let isPositionValid (existingPos: XYPos) =
+                if isGreaterThanThreshold then
+                    euclideanDistance existingPos position > threshold
+                else
+                    euclideanDistance existingPos position <= threshold
+
+
+            // Check if the position is more than threshold distance from all existing component positions
+            if getExistingPositions |> List.exists (fun existingPos ->
+                euclideanDistance existingPos position <= threshold) then
+                // Adjust position and try again if it's too close to an existing component - not sure if this is correct way to do it, maybe just use Gen<'a> + threshold?
+                if random.Next(0,2) = 0 then
+                    findPosition { position with X = position.X + threshold }
+                else
+                    findPosition { position with Y = position.Y + threshold }
+            else
+                position //so when no other component's position is within threshold then return component's pos
+
+        findPosition initPosition
+
+    let placeComponentsOnModel (components: componentInfo list) (threshold: float) (genSamples: XYPos) : SheetT.Model =
+        components
+        |> List.fold (fun currModel comp ->
+            let compPosition = generatePosition currModel threshold 
+            placeSymbol comp.Label comp.CompType (compPosition + genSamples) currModel
+            |> getOkOrFail) initSheetModel
+
+    //randomly connect components
+    //given the list of components, shuffle them, then connect pairwise components
+    let randomConnectComponents (components: componentInfo list) (threshold: float) (genSamples: XYPos) =
+        components
+        |> List.toArray
+        |> shuffleA
+        //could do pairwise and then connect the ports of the 1st element in the tuple with the 2nd
+        |> Array.pairwise
+        |> Array.fold (fun currModel (comp1, comp2) ->
+            placeWire (portOf comp1.Label 0) (portOf comp2.Label 0) currModel
+            |> Result.bind (placeWire (portOf comp1.Label 0) (portOf comp2.Label 1))
+            |> getOkOrFail
+            |> separateAllWires
+        ) (placeComponentsOnModel components threshold genSamples)
+
+    //so connect components based on a list of connections
+    let givenConnectComponents (components: componentInfo list) (connections: connectionInfo list) (threshold: float) (genSamples: XYPos)=
+        connections
+        |> List.fold (fun currModel connect ->
+            placeWire (portOf connect.SourceCompLabel connect.SourceCompPort) (portOf connect.TargetCompLabel connect.TargetCompPort) currModel
+            |> getOkOrFail
+            |> separateAllWires
+        ) (placeComponentsOnModel components threshold genSamples)
+
+    //want to create a test like this, so d3 creator must write components list and connections list (or not and use random connects) and call either use random connect components or given
+    let makeD3HelperTestCircuitGiven (threshold: float) (genSamples : XYPos) : SheetT.Model =
+        let components = [
+            { Label = "AND1"; CompType = GateN(And, 2) }; // Example component, adjust types and labels as needed
+            { Label = "OR1"; CompType = GateN(Or, 2) };
+            { Label = "XOR1"; CompType = GateN(Xor, 2) };
+            { Label = "MUX1"; CompType = Mux2 };
+            // Add more components as needed for the test
+        ]
+
+        let connections = [
+            { SourceCompLabel = "AND1"; SourceCompPort = 0; TargetCompLabel = "OR1"; TargetCompPort = 0 };
+            { SourceCompLabel = "OR1"; SourceCompPort = 0; TargetCompLabel = "XOR1"; TargetCompPort = 1 };
+            { SourceCompLabel = "XOR1"; SourceCompPort = 0; TargetCompLabel = "MUX1"; TargetCompPort = 1 };
+            { SourceCompLabel = "MUX1"; SourceCompPort = 0; TargetCompLabel = "AND1"; TargetCompPort = 1 };
+            // Further connections as required
+        ]
+
+        //Choose whether to create a D3 test by providing a components and connections list or just a components list and randomly connecting:
+        givenConnectComponents components connections threshold genSamples
+
+    //want to create a test like this, so d3 creator must write components list and connections list (or not and use random connects) and call either use random connect components or given
+    let makeD3HelperTestCircuitRandom (threshold: float) (genSamples : XYPos) : SheetT.Model =
+        let components = [
+            { Label = "AND1"; CompType = GateN(And, 2) }; // Example component, adjust types and labels as needed
+            { Label = "OR1"; CompType = GateN(Or, 2) };
+            { Label = "XOR1"; CompType = GateN(Xor, 2) };
+            { Label = "MUX1"; CompType = Mux2 };
+            // Add more components as needed for the test
+        ]
+
+        //Choose whether to create a D3 test by providing a components and connections list or just a components list and randomly connecting:
+        randomConnectComponents components threshold genSamples
+
+    //Generate samples for D3 circuit maker helper function
+    let makeSamplesD3Helper =
+        let rotations = fromList [Some Rotation.Degree90; Some Rotation.Degree270; None]
+        let flips = fromList [Some SymbolT.FlipType.FlipHorizontal; None]
+        genXYPos 100
+        |> product (fun a b -> (a,b)) (genXYPos 100)
+        |> product (fun a b -> (a,b)) rotations
+        |> product (fun a b -> (a,b)) flips
+        |> map (fun (flipMux,(rotMux,(demuxPos, muxPos))) ->
+            {|
+                FlipMux = flipMux;
+                RotMux = rotMux;
+                DemuxPos = demuxPos;
+                Mux1Pos = muxPos;
+                Mux2Pos = muxPos
+            |})
 
 
 //------------------------------------------------------------------------------------------------//
@@ -381,13 +668,19 @@ module HLPTick3 =
             |> (function | true -> Some $"Symbol outline intersects another symbol outline in Sample {sample}"
                          | false -> None)
 
-
-
 //---------------------------------------------------------------------------------------//
 //-----------------------------Demo tests on Draw Block code-----------------------------//
 //---------------------------------------------------------------------------------------//
 
     module Tests =
+
+        let rotationDegrees = [| Degree0; Degree90; Degree180; Degree270 |]
+        let flipTypes = [|SymbolT.FlipHorizontal; SymbolT.FlipVertical|]
+
+        // Function to pick a random value from an array
+        let pickRandomValue<'T> (array: 'T[]) : 'T =
+            let index = GenerateData.random.Next(array.Length)
+            array.[index]
 
         /// Allow test errors to be viewed in sequence by recording the current error
         /// in the Issie Model (field DrawblockTestState). This contains all Issie persistent state.
@@ -408,29 +701,67 @@ module HLPTick3 =
                 firstSample
                 horizLinePositions
                 makeTest1Circuit
-                (Asserts.failOnSampleNumber 0)
-                dispatch
-            |> recordPositionInTest testNum dispatch
-
-        /// Example test: Horizontally positioned AND + DFF: fail on sample 10
-        let test2 testNum firstSample dispatch =
-            runTestOnSheets
-                "Horizontally positioned AND + DFF: fail on sample 10"
-                firstSample
-                horizLinePositions
-                makeTest1Circuit
                 (Asserts.failOnSampleNumber 10)
                 dispatch
             |> recordPositionInTest testNum dispatch
 
+        /// Example test: Horizontally positioned AND + DFF: fail on sample 10
+        //let test2 testNum firstSample dispatch =
+        //    runTestOnSheets
+        //        "Horizontally positioned AND + DFF: fail on sample 10"
+        //        firstSample
+        //        horizLinePositions
+        //        makeTest1Circuit
+        //        (Asserts.failOnSampleNumber 10)
+        //        dispatch
+        //    |> recordPositionInTest testNum dispatch
+
+        let testD3Easy testNum firstSample dispatch =
+            let threshold = 450.0
+            runTestOnSheets
+                "D3 Test 1 Easy"
+                firstSample
+                makeSamplesD3Easy
+                (makeD3TestCircuitEasy threshold)
+                //Asserts.failOnSymbolIntersectsSymbol
+                (Asserts.failOnSampleNumber 100)
+                dispatch
+            |> recordPositionInTest testNum dispatch
+
+        let testD3Hard testNum firstSample dispatch =
+            let threshold = 200.0
+            runTestOnSheets
+                "D3 Test 1 Hard"
+                firstSample
+                makeSamplesD3Hard
+                (makeD3TestCircuitHard threshold)
+                //Asserts.failOnSymbolIntersectsSymbol
+                (Asserts.failOnSampleNumber 100)
+                dispatch
+            |> recordPositionInTest testNum dispatch
+
+        let testD3HelperGiven testNum firstSample dispatch =
+            let threshold = 200.0
+            runTestOnSheets
+                "D3 Test Giving connections list"
+                firstSample
+                (genXYPos 100)
+                (makeD3HelperTestCircuitGiven threshold)
+                //Asserts.failOnSymbolIntersectsSymbol
+                (Asserts.failOnSampleNumber 10)
+                dispatch
+            |> recordPositionInTest testNum dispatch
+//
         /// Example test: Horizontally positioned AND + DFF: fail on symbols intersect
-        let test3 testNum firstSample dispatch =
+        let testD3HelperRandom testNum firstSample dispatch =
+            let threshold = 200.0
             runTestOnSheets
                 "Horizontally positioned AND + DFF: fail on symbols intersect"
                 firstSample
-                horizLinePositions
-                makeTest1Circuit
-                Asserts.failOnSymbolIntersectsSymbol
+                (genXYPos 100)
+                (makeD3HelperTestCircuitRandom threshold)
+                //Asserts.failOnSymbolIntersectsSymbol
+                (Asserts.failOnSampleNumber 10)
                 dispatch
             |> recordPositionInTest testNum dispatch
 
@@ -452,10 +783,11 @@ module HLPTick3 =
             // delete unused tests from list
             [
                 "Test1", test1 // example
-                "Test2", test2 // example
-                "Test3", test3 // example
-                "Test4", test4 
-                "Test5", fun _ _ _ -> printf "Test5" // dummy test - delete line or replace by real test as needed
+                "Test2", testD3Easy // example
+                "Test3", testD3Hard // example
+                "Test4", testD3HelperGiven
+                "Test5", testD3HelperRandom
+                //"Test5", fun _ _ _ -> printf "Test5" // dummy test - delete line or replace by real test as needed
                 "Test6", fun _ _ _ -> printf "Test6"
                 "Test7", fun _ _ _ -> printf "Test7"
                 "Test8", fun _ _ _ -> printf "Test8"
@@ -485,8 +817,3 @@ module HLPTick3 =
             | _ ->
                 func testIndex 0 dispatch
         
-
-
-    
-
-
