@@ -1170,6 +1170,29 @@ module HLPTick3 =
         |> getOkOrFail
         //|> separateAllWires
 
+    let makeTestD3Easy2 (threshold: float) (sample: {|ApplyBeautify: bool; FlipMux: SymbolT.FlipType option; RotMux: Rotation; DemuxPos: XYPos; Mux1Pos: XYPos; Mux2Pos: XYPos|}) : SheetT.Model = 
+        let s = sample
+        initSheetModel
+        |> placeSymbol "MUX1" (Mux2) (middleOfSheet + { X = -700; Y = -300 } + s.Mux1Pos)
+        |> match s.FlipMux with
+            | Some f -> Result.map (flipSymbol "MUX1" f) //so if flip is not none hten do result.map else do identity function to pass model as is without flip
+            | None -> id
+        |> Result.bind (placeSymbol "MUX2" (Mux2) (middleOfSheet + s.Mux2Pos))
+        |> Result.map (rotateSymbol "MUX2" s.RotMux)
+        |> Result.bind (placeSymbol "DEMUX2" (Demux2) (middleOfSheet + { X = -600; Y = -150 } + s.DemuxPos))
+        |> Result.bind (placeSymbol "G1" (GateN (And,2)) (middleOfSheet + { X = 400; Y = -100}))
+        |> Result.bind (placeSymbol "G2" (GateN (Or,2)) (middleOfSheet + { X = 300; Y = 120}))
+        |> Result.bind (placeWire (portOf "MUX1" 0) (portOf "MUX2" 1))
+        |> Result.bind (placeWire (portOf "MUX1" 0) (portOf "G1" 1))
+        |> Result.bind (placeWire (portOf "MUX2" 0) (portOf "G1" 0))
+        |> Result.bind (placeWire (portOf "DEMUX2" 0) (portOf "MUX2" 2))
+        |> Result.bind (placeWire (portOf "DEMUX2" 1) (portOf "MUX2" 0))
+        |> Result.bind (placeWire (portOf "DEMUX2" 0) (portOf "G2" 0))
+        |> Result.bind (placeWire (portOf "MUX2" 0) (portOf "G2" 1))
+        |> (fun res -> if s.ApplyBeautify then Result.map sheetWireLabelSymbol res else res)
+        |> Result.map autoRouteAllWires
+        |> getOkOrFail
+
     ///Generate hard/likely-to-fail tests for sheetWireLabelSymbol (D3) with all components being threshold distance apart.
     ///Takes in a threshold distance between components
     ///Returns a sheet with the circuit placed on it.
@@ -1197,6 +1220,29 @@ module HLPTick3 =
         |> Result.bind (placeWire (portOf "AND1" 0) (portOf "XOR1" 0))
         |> Result.bind (placeWire (portOf "AND1" 0) (portOf "XOR1" 1))
         |> Result.bind (placeWire (portOf "XOR1" 0) (portOf "MUX1" 0))
+        |> (fun res -> if s.ApplyBeautify then Result.map sheetWireLabelSymbol res else res)
+        |> Result.map autoRouteAllWires
+        |> getOkOrFail
+
+    let makeTestD3Compressed (threshold: float) (sample: {|ApplyBeautify: bool; FlipMux: SymbolT.FlipType option; RotMux: Rotation; DemuxPos: XYPos; Mux1Pos: XYPos; Mux2Pos: XYPos|}) : SheetT.Model = 
+        let s = sample
+        initSheetModel
+        |> placeSymbol "MUX1" (Mux2) (middleOfSheet + { X = -70; Y = -30 } + s.Mux1Pos)
+        |> match s.FlipMux with
+            | Some f -> Result.map (flipSymbol "MUX1" f) //so if flip is not none hten do result.map else do identity function to pass model as is without flip
+            | None -> id
+        |> Result.bind (placeSymbol "MUX2" (Mux2) (middleOfSheet + s.Mux2Pos))
+        |> Result.map (rotateSymbol "MUX2" s.RotMux)
+        |> Result.bind (placeSymbol "DEMUX2" (Demux2) (middleOfSheet + { X = -60; Y = -15 } + s.DemuxPos))
+        |> Result.bind (placeSymbol "G1" (GateN (And,2)) (middleOfSheet + { X = 40; Y = -10}))
+        |> Result.bind (placeSymbol "G2" (GateN (Or,2)) (middleOfSheet + { X = 30; Y = 12}))
+        |> Result.bind (placeWire (portOf "MUX1" 0) (portOf "MUX2" 1))
+        |> Result.bind (placeWire (portOf "MUX1" 0) (portOf "G1" 1))
+        |> Result.bind (placeWire (portOf "MUX2" 0) (portOf "G1" 0))
+        |> Result.bind (placeWire (portOf "DEMUX2" 0) (portOf "MUX2" 2))
+        |> Result.bind (placeWire (portOf "DEMUX2" 1) (portOf "MUX2" 0))
+        |> Result.bind (placeWire (portOf "DEMUX2" 0) (portOf "G2" 0))
+        |> Result.bind (placeWire (portOf "MUX2" 0) (portOf "G2" 1))
         |> (fun res -> if s.ApplyBeautify then Result.map sheetWireLabelSymbol res else res)
         |> Result.map autoRouteAllWires
         |> getOkOrFail
@@ -1377,11 +1423,24 @@ module HLPTick3 =
                 firstSample
                 makeSamplesD3Easy                  
                 (makeTestD3Easy threshold)
-                Asserts.failD3
-                //Asserts.failOnAllTests
+                //Asserts.failD3
+                Asserts.failOnAllTests
                 dispatch
             |> recordPositionInTest testNum dispatch
             (collectMetricsOfTests makeSamplesD3Easy (makeTestD3Easy threshold) id)
+
+        let testD3Easy2 testNum firstSample dispatch =
+            let threshold = 450.0
+            runTestOnSheets
+                "2 Mux4 and 1 DeMux threshold distance apart: fail on overlapping symbols or symbol wire intersect - 2nd Easy Case"
+                firstSample
+                makeSamplesD3Easy               //maybe change to make new samples?   
+                (makeTestD3Easy2 threshold)
+                //Asserts.failD3
+                Asserts.failOnAllTests
+                dispatch
+            |> recordPositionInTest testNum dispatch
+            (collectMetricsOfTests makeSamplesD3Easy (makeTestD3Easy2 threshold) id)
 
         let testD3Hard testNum firstSample dispatch =
             let threshold = 400.0
@@ -1390,11 +1449,24 @@ module HLPTick3 =
                 firstSample
                 makeSamplesD3Hard
                 (makeTestD3Hard threshold)
-                Asserts.failD3
-                //Asserts.failOnAllTests //allows iterating through all tests
+                //Asserts.failD3
+                Asserts.failOnAllTests //allows iterating through all tests
                 dispatch
             |> recordPositionInTest testNum dispatch
             (collectMetricsOfTests makeSamplesD3Hard (makeTestD3Hard threshold) id)
+
+        let testD3Compress testNum firstSample dispatch =
+            let threshold = 200.0
+            runTestOnSheets
+                "2 Mux4 and 1 DeMux threshold distance apart: fail on overlapping symbols or symbol wire intersect"
+                firstSample
+                makeSamplesD3Easy                  
+                (makeTestD3Compressed threshold)
+                //Asserts.failD3
+                Asserts.failOnAllTests
+                dispatch
+            |> recordPositionInTest testNum dispatch
+            (collectMetricsOfTests makeSamplesD3Easy (makeTestD3Compressed threshold) id)
 
         let testFixedConnectCircuitGen testNum firstSample dispatch =
             let threshold = 200.0
@@ -1427,8 +1499,8 @@ module HLPTick3 =
                 "Test1", test1 // example
                 "Test2", testD3Easy // example
                 "Test3", testD3Hard // example
-                "Test4", test4 // example
-                "Test5", test5 // sheetOrderFlip: default circuit
+                "Test4", testD3Easy2 // example
+                "Test5", testD3Compress // sheetOrderFlip: default circuit
                 "Test6", test6 // sheetOrderFlip: multiple mux and gates
                 "Test7", testFixedConnectCircuitGen
                 "Test8", testRandomConnectCircuitGen
