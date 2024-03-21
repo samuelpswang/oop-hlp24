@@ -309,7 +309,7 @@ let sheetWireLabelSymbol (initialModel: SheetT.Model): SheetT.Model =
 
     let modelToUpdate = {initialModel with UndoList = newUndoList; RedoList = newRedoList}
 
-    // Set properties that define a bad wire
+    // Set properties that define a bad wire - check these for all tests
     let badWireProperties = { minLength = 1000; minRightAngleBends = 3; minWireCrossings = 4 }  
 
     modelWithWireLabels modelToUpdate badWireProperties
