@@ -8,6 +8,7 @@ open DrawModelType
 open DrawModelType.SheetT
 open DrawModelType.BusWireT
 
+//NOTE: 'Potential' in this file means 'Potential for straightening'
 
 ///Retuns a list of all the symbols on the sheet
 let symList (sheet: SheetT.Model) = 
@@ -44,29 +45,29 @@ let isSinglePortComponent (sym: Symbol) =
 //    visibleSegments wire.WId sheet
 //    |> List.fold (fun start segEnd -> start + segEnd) wire.StartPos
 
-
+///Finds the correct sign of the align offset depending on which side(egde) of the symbol the port is.
 let adaptAlignOffsetSign (sym: Symbol) (portId: string) =
     match Map.tryFind portId sym.PortMaps.Orientation with
     | Some Left -> -1.0
     | _ -> 1.0
 
 
-///Should be used just for wires with 3 visible segments
-/// Calculates the offSet based on the middle segmant of a potential wire 
+/// Calculates the offSet by which the symbol needs to be moved based on the middle segment of a potential wire, 
+/// this function should be used just for wires with 3 visible segments
 let calculateAlignOffset (wire: Wire) (sheet: SheetT.Model) =
     wire.WId
     |> (fun wId -> visibleSegments wId sheet)
     |> (fun visSegs -> if List.length visSegs = 3 then visSegs[1] else XYPos.zero)
 
 
-///Returns a list of the potential wire if there are no straight wires already.
+///Returns a list of the  wire that has potential for straightening if there are no straight wires already.
 let listPotentialWires (wires: list<Wire> ) (sheet: SheetT.Model) =
     let streightWires = wires |> List.exists (fun wire -> isStraightenedWire wire sheet)
     if streightWires = false
     then wires |> List.filter (fun wire -> straighteningPotentialWire wire sheet)
     else []
 
-
+///Updates all the wires on a sheet         
 let updateSheetWires (sheet: SheetT.Model) = 
     let wList = (Map.toList >> List.map snd) sheet.Wire.Wires
     List.fold (fun sheet wire -> 
@@ -74,7 +75,7 @@ let updateSheetWires (sheet: SheetT.Model) =
                     Optic.set (SheetT.wireOf_ newWire.WId) newWire sheet) sheet wList
 
 
-//Write a  function that changes the position of the symbol according rhe first potential wire
+///Finds the wire with potential for straightening that has the smallest align offset 
 let tryLeastOffsetWire (sheet: SheetT.Model) (wires: list<Wire> ) =
     List.sortBy (fun wire ->
                     let offset = calculateAlignOffset wire sheet
@@ -82,7 +83,7 @@ let tryLeastOffsetWire (sheet: SheetT.Model) (wires: list<Wire> ) =
     |> List.tryItem 0
 
 
-//Write a  function that changes the position of the symbol according rhe first potential wire
+///Write a  function that changes the position of the symbol according rhe first potential wire
 let getPotentialWireOffset (sheet: SheetT.Model) (wires: list<Wire> ) =
     if wires = []
     then XYPos.zero
@@ -228,7 +229,7 @@ let calcPortRatio (outSym: SymbolT.Symbol) (inSym: SymbolT.Symbol) =
     match calcPortOffset outSym PortType.Output, calcPortOffset inSym PortType.Input with
     | Some (outOff), Some (inOff) -> outOff/inOff
     | _ ->
-        printfn "Something's wrong I can feel it..." 
+        printfn "Something is wrong" 
         1.0
 
 
@@ -406,8 +407,17 @@ let alignSymbolFolder (sheet: SheetT.Model) (symId: ComponentId) =
                         |> rerouteWires [sym.Id] signedOffset) sheet newSymbols
     | None -> sheet
 
+///aligns components that are constrained with other components from the both sides
 let alignConstrainedComponentsPhase (sheet: SheetT.Model) =
     extractMoreInput1OutputPortSymbolsSorted sheet
     |> List.map (fun sym -> sym.Id)
     |> List.fold alignSymbolFolder sheet
     |> updateSheetWires
+
+///calls beautify D1 which straightens the wires on a sheet
+let sheetAlignScale (sheet: SheetT.Model) =
+    sheet 
+    |> alignConstrainedComponentsPhase
+    |> scaleSymbolAlignPhase
+    |> alignOnePortSymbolsPhase
+    |> alignOnePortSymbolsPhase
