@@ -9,19 +9,22 @@ open DrawModelType.SheetT
 open DrawModelType.BusWireT
 
 
-//List of all the symbols on the sheet
-let symbolList (sheet: SheetT.Model) = 
+///Retuns a list of all the symbols on the sheet
+let symList (sheet: SheetT.Model) = 
     Map.toList sheet.Wire.Symbol.Symbols
     |> List.map snd
 
-
+/// <summary>Returns the Symbol that corresponds to the inputted label</summary>
+/// <param name="label"> string </param>
+/// <param name="sheet"> The sheet that contains the label  </param>
+/// <returns>Returns the Symbol that corresponds to the inputted label</returns> 
 let getSymFromLabel (label: string) (sheet: SheetT.Model) = 
     (Map.toList >> List.map snd) sheet.Wire.Symbol.Symbols
     |> List.find(fun sym -> sym.Component.Label = label)
 
 
 ///Returns True if a wire is straightened.
-let straightenedWire (wire: Wire) (sheet: SheetT.Model) = 
+let isStraightenedWire (wire: Wire) (sheet: SheetT.Model) = 
     let wId = wire.WId
     (visibleSegments wId sheet |> List.length) = 1
 
@@ -30,19 +33,19 @@ let straighteningPotentialWire (wire: Wire) (sheet: SheetT.Model) =
     let wId = wire.WId
     (visibleSegments wId sheet |> List.length) = 3
 
-
-let checkIfSinglePortComponent (sym: Symbol) =
+///Returns True if the Symbol has just one port.
+let isSinglePortComponent (sym: Symbol) =
     let numInputPorts= sym.Component.InputPorts |> List.length 
     let numOutputPorts= sym.Component.OutputPorts |> List.length
     (numInputPorts + numOutputPorts) = 1
 
+//Returns the position of the end of a wire
+//let endOfWire (wire: BusWireT.Wire) (sheet: SheetT.Model) = 
+//    visibleSegments wire.WId sheet
+//    |> List.fold (fun start segEnd -> start + segEnd) wire.StartPos
 
-let endOfWire (wire: BusWireT.Wire) (sheet: SheetT.Model) = 
-    visibleSegments wire.WId sheet
-    |> List.fold (fun start segEnd -> start + segEnd) wire.StartPos
 
-
-let changeOffsetSign (sym: Symbol) (portId: string) =
+let adaptAlignOffsetSign (sym: Symbol) (portId: string) =
     match Map.tryFind portId sym.PortMaps.Orientation with
     | Some Left -> -1.0
     | _ -> 1.0
@@ -50,7 +53,7 @@ let changeOffsetSign (sym: Symbol) (portId: string) =
 
 ///Should be used just for wires with 3 visible segments
 /// Calculates the offSet based on the middle segmant of a potential wire 
-let calculateOffset (wire: Wire) (sheet: SheetT.Model) =
+let calculateAlignOffset (wire: Wire) (sheet: SheetT.Model) =
     wire.WId
     |> (fun wId -> visibleSegments wId sheet)
     |> (fun visSegs -> if List.length visSegs = 3 then visSegs[1] else XYPos.zero)
@@ -58,7 +61,7 @@ let calculateOffset (wire: Wire) (sheet: SheetT.Model) =
 
 ///Returns a list of the potential wire if there are no straight wires already.
 let listPotentialWires (wires: list<Wire> ) (sheet: SheetT.Model) =
-    let streightWires = wires |> List.exists (fun wire -> straightenedWire wire sheet)
+    let streightWires = wires |> List.exists (fun wire -> isStraightenedWire wire sheet)
     if streightWires = false
     then wires |> List.filter (fun wire -> straighteningPotentialWire wire sheet)
     else []
@@ -74,7 +77,7 @@ let updateSheetWires (sheet: SheetT.Model) =
 //Write a  function that changes the position of the symbol according rhe first potential wire
 let tryLeastOffsetWire (sheet: SheetT.Model) (wires: list<Wire> ) =
     List.sortBy (fun wire ->
-                    let offset = calculateOffset wire sheet
+                    let offset = calculateAlignOffset wire sheet
                     abs(offset.X) + abs(offset.Y)) wires
     |> List.tryItem 0
 
@@ -86,7 +89,7 @@ let getPotentialWireOffset (sheet: SheetT.Model) (wires: list<Wire> ) =
     else
         // let firstWire = List.item 0 wires
         // calculateOffset firstWire sheet
-        List.map (fun wire -> calculateOffset wire sheet) wires
+        List.map (fun wire -> calculateAlignOffset wire sheet) wires
         |> List.sortBy (fun pos -> abs(pos.X) + abs(pos.Y))
         |> List.item 0
 
@@ -163,7 +166,7 @@ let alignOnePortSymbol (onePortSymId: ComponentId) (sheet: SheetT.Model) =
     let onePortSym = sheet.Wire.Symbol.Symbols[onePortSymId]
 
     let portId = Map.toList onePortSym.PortMaps.Orientation |> List.item 0 |> fst
-    let offsetSign = changeOffsetSign onePortSym portId
+    let offsetSign = adaptAlignOffsetSign onePortSym portId
     let potentialList = 
         sheet
         |> allWires1PortSym onePortSym
@@ -176,7 +179,7 @@ let alignOnePortSymbol (onePortSymId: ComponentId) (sheet: SheetT.Model) =
 
     leastOffsetWire
     |> Option.map (fun wire ->
-        calculateOffset wire sheet)
+        calculateAlignOffset wire sheet)
     |> Option.map (fun offset -> BlockHelpers.moveSymbol {X = offset.X * offsetSign; Y = offset.Y * offsetSign} onePortSym)
     |> Option.defaultValue onePortSym
 
@@ -239,8 +242,8 @@ let symbolsConnected (wire: Wire) (sheet: SheetT.Model) =
 
     match wire.InputPort, wire.OutputPort with 
     | InputPortId (iId), OutputPortId(oId)  -> 
-        List.find (fun sym -> portOnSymbol oId sym) (symbolList sheet),
-        List.find (fun sym -> portOnSymbol iId sym) (symbolList sheet)
+        List.find (fun sym -> portOnSymbol oId sym) (symList sheet),
+        List.find (fun sym -> portOnSymbol iId sym) (symList sheet)
 
 
 ///Finds the wires between any two symbols on the sheet for all symbols on the sheet.
@@ -301,8 +304,8 @@ let checkSymbolOverlap (symId: ComponentId) (sheet: SheetT.Model) =
 let alignOnePortSymbolsPhase (sheet: SheetT.Model) =
 
     let singlePortSymbols (sheetToCheck: SheetT.Model) = 
-        symbolList sheetToCheck
-        |> List.filter (fun sym -> checkIfSinglePortComponent sym)
+        symList sheetToCheck
+        |> List.filter (fun sym -> isSinglePortComponent sym)
 
     let flippedSymbolSheet = 
         singlePortSymbols sheet
@@ -341,7 +344,7 @@ let scaleSymbolAlignPhase (sheet: SheetT.Model) =
             symTuples[syms]
             |> List.tryItem 0
         wireOpt
-        |> Option.map (fun wire -> calculateOffset wire scaledSheet)
+        |> Option.map (fun wire -> calculateAlignOffset wire scaledSheet)
         |> Option.map (fun offset -> BlockHelpers.moveSymbol {X = -offset.X; Y = -offset.Y} (snd syms))
         |> Option.map (fun newSym -> Optic.set (SheetT.symbolOf_ newSym.Id) newSym scaledSheet)
         |> Option.defaultWith (fun _ ->
@@ -388,8 +391,8 @@ let alignSymbolFolder (sheet: SheetT.Model) (symId: ComponentId) =
     let firstOutputWire = List.tryItem 0 (getOutputPortWires symbol.Id sheet)
     match firstOutputWire with
     | Some wire -> 
-        let unsignedOffset = calculateOffset wire sheet
-        let sign = changeOffsetSign symbol symbol.Component.OutputPorts[0].Id
+        let unsignedOffset = calculateAlignOffset wire sheet
+        let sign = adaptAlignOffsetSign symbol symbol.Component.OutputPorts[0].Id
         let signedOffset = {X = unsignedOffset.X * sign; Y = unsignedOffset.Y * sign}
         let newSymbols = List.map (fun sym -> 
                                         //printfn $"{sym.Component.Label}"
