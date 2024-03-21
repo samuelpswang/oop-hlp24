@@ -36,12 +36,12 @@ open SheetBeautifyD3
 
 let beautifySheet (initialModel : SheetT.Model) : SheetT.Model =
 
-
+    // adding to undo/redo stack
     let newUndoList, newRedoList = SheetUpdateHelpers.appendUndoList initialModel.UndoList initialModel, initialModel.RedoList
-
     let modelToUpdate = {initialModel with UndoList = newUndoList; RedoList = newRedoList}
 
     modelToUpdate
+    //|> SheetBeautifyD1.sheetAlignScale
     |> SheetBeautifyD2.sheetOrderFlip
     |> SheetBeautifyD3.sheetWireLabelSymbol
 
