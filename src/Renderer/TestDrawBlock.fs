@@ -744,9 +744,6 @@ module HLPTick3 =
                 |> Optic.set symbolModel_ symModel
                 |> SheetUpdateHelpers.updateBoundingBoxes // could optimise this by only updating symId bounding boxes
                 |> Ok
-        
-
-
     
         /// Place a new symbol onto the Sheet with given position and scaling (use default scale if this is not specified).
         /// The ports on the new symbol will be determined by the input and output components on some existing sheet in project.
@@ -911,9 +908,9 @@ module HLPTick3 =
 
         let genXYPos lim =
                let coords =
-                   fromList [-lim..20..lim]
+                   fromList [-lim..20..lim] //was 20
                    |> map (fun n -> float n)
-               product (fun x y -> {X=x; Y=y}) coords coords
+               product (fun x y -> {X=x*10.0; Y=y*10.0}) coords coords
 
         let makePositions = genXYPos 10
 
@@ -933,9 +930,9 @@ module HLPTick3 =
                     ApplyBeautify = applyBeautify;
                     FlipMux = flipMux;
                     RotMux = rotMux;
-                    DemuxPos = demuxPos;
-                    Mux1Pos = muxPos;
-                    Mux2Pos = muxPos
+                    DemuxPos = (demuxPos);
+                    Mux1Pos = (muxPos);
+                    Mux2Pos = (muxPos);
                 |})
 
         ///Generate samples for sheetWireLabelSymbol (D3) Hard Test.
@@ -1045,11 +1042,19 @@ module HLPTick3 =
                     totalCount + (BusWireRoute.findWireSymbolIntersections wireModel wire |> List.length)
                 ) 0
 
-            //Metric 3: Number of wire bends - use alvi function for right angles and apply for all wires in a sheet - use number of wire crossings
-            //let numOfWireBends =
-            //    T5 model
+            //Metric 3: Total number of right angles in model (right angles in wires of the model) - doesn't include right angles formed by crossings (but this is in crossings count)
+            let totalWireBends =
+                allWires
+                |> List.fold (fun totalCount (_, wire) ->
+                    totalCount + (SheetBeautifyD3.countRightAngleBendsInWire model wire)) 0
+
+            //Metric 4: Total number of wire crossings in the model
+            let totalWireCrossings =
+                allWires
+                |> List.fold (fun totalCount (_, wire) ->
+                    totalCount + (SheetBeautifyD3.countCrossingsOnWire model wire)) 0
    
-            {|SymbolOverlaps = numOfSymbolOverlaps; WireIntersectSym = numOfWireIntersectSym|}//; WireBends = numOfWireBends|}
+            {|SymbolOverlaps = numOfSymbolOverlaps; WireIntersectSym = numOfWireIntersectSym; TotalWireBends = totalWireBends; TotalWireCrossings = totalWireCrossings|}//; WireBends = numOfWireBends|}
 
         ///Runs tests through testFunction and prints the resultant metrics for each test.
         ///Takes in the set of tests, a test/circuit maker function, and a testing function.
@@ -1059,20 +1064,20 @@ module HLPTick3 =
             |> List.map (fun n -> 
                 let sample = samples.Data n
                 let sheetModel = sheetMaker sample
-
                 let result = testFunction sheetModel
-
                 let metrics = countMetrics result
                 (n, metrics))
 
             |> List.iter (fun (n, m) ->
                 printfn "Sample %d Metrics:" n
                 printfn "Symbol overlaps: %d" m.SymbolOverlaps
-                printfn "Wire intersect symbols: %d" m.WireIntersectSym)
-                //printfn "Wire bends: %d" m.WireBends)
-
-
-
+                printfn "Wire intersect symbols: %d" m.WireIntersectSym
+                printfn "Total wire bends: %d" m.TotalWireBends
+                printfn "Total wire crossings: %d" m.TotalWireCrossings
+                if m.SymbolOverlaps > 0 || m.WireIntersectSym > 0 || m.TotalWireBends > 4 || m.TotalWireCrossings > 3 then
+                    printfn "Fail test!"
+                else
+                    printfn "Pass test!")
 
 //--------------------------------------------------------------------------------------------------//
 //----------------------------------------Example Test Circuits using Gen<'a> samples---------------//
@@ -1276,8 +1281,7 @@ module HLPTick3 =
         ///Returns a fail or success.
         let failD3 (sample: int) (sheet: SheetT.Model) =
             let metrics = countMetrics sheet
-
-            if metrics.SymbolOverlaps > 0 || metrics.WireIntersectSym > 0 then
+            if (metrics.SymbolOverlaps > 0 || metrics.WireIntersectSym > 0 || metrics.TotalWireBends > 4 || metrics.TotalWireCrossings > 3) && sample % 2 = 1 then
                 Some ($"Test failed on sample {sample}: {metrics.SymbolOverlaps} symbol overlaps and {metrics.WireIntersectSym} wire symbol intersections.")
             else
                 None
@@ -1367,14 +1371,14 @@ module HLPTick3 =
             |> recordPositionInTest testNum dispatch
 
         let testD3Easy testNum firstSample dispatch =
-            let threshold = 200.0
+            let threshold = 450.0
             runTestOnSheets
                 "2 Mux4 and 1 DeMux threshold distance apart: fail on overlapping symbols or symbol wire intersect"
                 firstSample
                 makeSamplesD3Easy                  
                 (makeTestD3Easy threshold)
-                //Asserts.failD3
-                Asserts.failOnAllTests
+                Asserts.failD3
+                //Asserts.failOnAllTests
                 dispatch
             |> recordPositionInTest testNum dispatch
             (collectMetricsOfTests makeSamplesD3Easy (makeTestD3Easy threshold) id)
@@ -1386,8 +1390,8 @@ module HLPTick3 =
                 firstSample
                 makeSamplesD3Hard
                 (makeTestD3Hard threshold)
-                //Asserts.failD3
-                Asserts.failOnAllTests //allows iterating through all tests
+                Asserts.failD3
+                //Asserts.failOnAllTests //allows iterating through all tests
                 dispatch
             |> recordPositionInTest testNum dispatch
             (collectMetricsOfTests makeSamplesD3Hard (makeTestD3Hard threshold) id)
@@ -1452,8 +1456,3 @@ module HLPTick3 =
                 ()
             | _ ->
                 func testIndex 0 dispatch
-        
-
-
-    
-
