@@ -83,7 +83,7 @@ let tryLeastOffsetWire (sheet: SheetT.Model) (wires: list<Wire> ) =
     |> List.tryItem 0
 
 
-///Write a  function that changes the position of the symbol according rhe first potential wire
+///gets the align offset of the wire that has the smallest offset
 let getPotentialWireOffset (sheet: SheetT.Model) (wires: list<Wire> ) =
     if wires = []
     then XYPos.zero
@@ -94,7 +94,7 @@ let getPotentialWireOffset (sheet: SheetT.Model) (wires: list<Wire> ) =
         |> List.sortBy (fun pos -> abs(pos.X) + abs(pos.Y))
         |> List.item 0
 
-
+///Gets all the wires from a port.
 let getWiresFromPort (sheet: SheetT.Model) (port: Port) (wireInputPort: bool) =
             sheet.Wire.Wires
             |> Map.toList
@@ -257,16 +257,18 @@ let connectedSymbolsMap (sheet: SheetT.Model) =
                             | Some wireList -> Map.add syms (wire :: wireList) map
                             | None -> Map.add syms [wire] map) Map.empty
 
+/// Returns the symbol that corresponds to the componentId from the sheet.
 let findSymbol (symId:ComponentId) (sheet:SheetT.Model)=
     sheet.Wire.Symbol.Symbols |> Map.find  symId
 
-let checkMoreInput1OutputPortSymbol (compId:ComponentId) (sheet:SheetT.Model) =
+/// Checks if a symbol has more input ports and 1 output port
+let ifMoreInput1OutputPortSymbol (compId:ComponentId) (sheet:SheetT.Model) =
     let sym = findSymbol compId sheet
     let numInputPorts= sym.Component.InputPorts |> List.length 
     let numOutputPorts= sym.Component.OutputPorts |> List.length
     (numInputPorts > 0) && (numOutputPorts = 1)
  
-/// Gets the all the wires from the output ports. 
+/// Gets all the wires from the output ports. 
 let getOutputPortWires (compId:ComponentId) (sheet: SheetT.Model)=
     let sym = findSymbol compId sheet
     let outputPorts= sym.Component.OutputPorts 
@@ -280,7 +282,7 @@ let getOutputPortWires (compId:ComponentId) (sheet: SheetT.Model)=
 // let changeOffsetSign (sym: Symbol) (portId: string) =
     
 
-/// Gets the all the wires from the input ports.
+/// Gets all the wires from the input ports.
 let getInputPortWires (compId:ComponentId) (sheet: SheetT.Model)=
     let sym = findSymbol compId sheet
     let inputPorts= sym.Component.InputPorts 
@@ -294,7 +296,9 @@ let getInputPortWires (compId:ComponentId) (sheet: SheetT.Model)=
 // You collect all the bounding boxes of the other symbols (otherSymsBB) from otherSymBBMap.
 // Finally, you iterate over otherSymsBB and check if any of these bounding boxes overlap with the bounding
 // box of the specified symbol (symBB), using the overlap2DBox function from BlockHelpers.
-let checkSymbolOverlap (symId: ComponentId) (sheet: SheetT.Model) =
+
+///Checks if a symbol overlaps with any other symbols on the sheet
+let ifSymbolOverlap (symId: ComponentId) (sheet: SheetT.Model) =
     let symBBMap, otherSymBBMap = Map.partition (fun otherSymId _ -> otherSymId = symId) sheet.BoundingBoxes
     let symBB = (Map.toList >> List.map snd >> List.item 0) symBBMap
     let otherSymsBB = (Map.toList >> List.map snd) otherSymBBMap
@@ -321,7 +325,7 @@ let alignOnePortSymbolsPhase (sheet: SheetT.Model) =
         let newSheet = 
             Optic.set (SheetT.symbolOf_ newSym.Id) newSym sheet 
             |> SheetUpdateHelpers.updateBoundingBoxes
-        if checkSymbolOverlap newSym.Id newSheet
+        if ifSymbolOverlap newSym.Id newSheet
         then sheet 
         else newSheet
 
@@ -367,17 +371,19 @@ let scaleSymbolAlignPhase (sheet: SheetT.Model) =
     |> updateSheetWires
 
     
-    //IMPORTANT NOTE: The align1PortSymbol function has a terible name, it actually aligns a symbol according its wire. 
-    //Will change the name when I can focus in order to find the name that makes sense for the both phases.
 
+
+/// Returns a list of Symbols that have more input ports and one output port and sorts them according
+/// their position on the sheet
 let extractMoreInput1OutputPortSymbolsSorted (sheet: SheetT.Model)=
     sheet.Wire.Symbol.Symbols 
-    |> Map.filter (fun compId _ -> checkMoreInput1OutputPortSymbol compId sheet)
+    |> Map.filter (fun compId _ -> ifMoreInput1OutputPortSymbol compId sheet)
     |> Map.toList 
     |> List.map snd
     |> List.sortBy (fun sym -> sym.Pos.X)
     |> List.rev
 
+///Returns a list of all the symbols that input data to the symbol
 let findInputSymbolsFromSymbol (symbol:Symbol) (sheet:SheetT.Model) =
     symbol.Component.InputPorts 
     |> List.collect (fun port -> getWiresFromPort sheet port true)
@@ -400,7 +406,7 @@ let alignSymbolFolder (sheet: SheetT.Model) (symId: ComponentId) =
                                         BlockHelpers.moveSymbol signedOffset sym) (symbol :: inputConnectedSymbol)
         List.fold (fun sheet sym -> 
                     let newSheet = Optic.set (SheetT.symbolOf_ sym.Id) sym sheet |> SheetUpdateHelpers.updateBoundingBoxes
-                    if checkSymbolOverlap sym.Id newSheet
+                    if ifSymbolOverlap sym.Id newSheet
                     then sheet
                     else 
                         newSheet
