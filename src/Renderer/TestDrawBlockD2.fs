@@ -39,6 +39,40 @@ module D2 =
                     { model with Wires = updatedWires }) 
                 wireModel
         {sheet with Wire = updatedWireModel}
+
+    // Rotate a symbol
+    // Rotate a symbol
+    let rotateSymbolD2 (symLabel: string) (rotate: Rotation) (model: SheetT.Model) : (SheetT.Model) =
+        let componentMap = model.Wire.Symbol.Symbols
+        let findSymbolID map = 
+            map|> Map.filter(fun _ (value:DrawModelType.SymbolT.Symbol) -> value.Component.Label = symLabel)
+        let compList = (findSymbolID componentMap) |> Map.toList |> List.map fst
+        let rotmodel = {model with Wire = {model.Wire with Symbol = (RotateScale.rotateBlock compList model.Wire.Symbol rotate)}}
+
+        let newModel = {rotmodel with BoundingBoxes = Symbol.getBoundingBoxes rotmodel.Wire.Symbol}
+        
+        let errorComponents =
+            newModel.SelectedComponents
+            |> List.filter (fun sId -> not (Sheet.notIntersectingComponents newModel newModel.BoundingBoxes[sId] sId))
+        {newModel with ErrorComponents = errorComponents}
+
+            
+        
+
+    // Flip a symbol
+    let flipSymbolD2 (symLabel: string) (flip: SymbolT.FlipType) (model: SheetT.Model) : (SheetT.Model) =
+        let componentMap = model.Wire.Symbol.Symbols
+        let findSymbolID map = 
+            map|> Map.filter(fun _ (value:DrawModelType.SymbolT.Symbol) -> value.Component.Label = symLabel)
+        let compList = (findSymbolID componentMap) |> Map.toList |> List.map fst
+        let flipmodel = {model with Wire = {model.Wire with Symbol = (RotateScale.flipBlock compList model.Wire.Symbol flip)}}
+
+        let newModel = {flipmodel with BoundingBoxes = Symbol.getBoundingBoxes flipmodel.Wire.Symbol}
+        
+        let errorComponents =
+            newModel.SelectedComponents
+            |> List.filter (fun sId -> not (Sheet.notIntersectingComponents newModel newModel.BoundingBoxes[sId] sId))
+        {newModel with ErrorComponents = errorComponents}
         
 
     let horizLinePositions =
@@ -90,7 +124,7 @@ module D2 =
     /// demo test circuit consisting of all components neede from D2
     let makeD2StarterCircuit (data :SymbolT.FlipType * SymbolT.FlipType * bool * SymbolT.FlipType * bool) =
         let gateFlip, mux2Flip, mux2Swap, mux1Flip,mux1Swap = data
-        let tmpFlip = flipSymbol 
+        let tmpFlip = flipSymbolD2
         let tmpFlipResult label  flip sheet = if true then Ok (tmpFlip label flip sheet) else Error "Won't happen"
         let tmpSwap = swapMuxInput
         let tmpSwapResult symLabel sheet swap = if true then Ok (tmpSwap symLabel sheet swap) else Error "Won't happen"
@@ -136,7 +170,7 @@ module D2 =
 
     let makeD2OptionCircuit (data :SymbolT.FlipType * SymbolT.FlipType * bool * SymbolT.FlipType * bool * XYPos * XYPos * XYPos * XYPos * XYPos) =
         let gateFlip, mux2Flip, mux2Swap, mux1Flip, mux1Swap, mux1, mux2, s1, s2, g1 = data
-        let tmpFlip = flipSymbol 
+        let tmpFlip = flipSymbolD2
         let tmpFlipResult label  flip sheet = if true then Ok (tmpFlip label flip sheet) else Error "Won't happen"
         let tmpSwap = swapMuxInput
         let tmpSwapResult symLabel sheet swap = if true then Ok (tmpSwap symLabel sheet swap) else Error "Won't happen"
@@ -168,7 +202,7 @@ module D2 =
         D2StarterPositions
         |> toList
         |> List.map (getOptionStarterPosition topLeft bottomRight)
-        |> List.filter(fun d -> (numOfIntersectedSymPairs (makeD2OptionCircuit d)) <= 0)
+        |> List.filter(fun d -> (numOfIntersectedSymPairs (makeD2OptionCircuit d)) = 0)
         |> fromList
 
 
