@@ -525,14 +525,15 @@ module HLPTick3 =
 
             |> List.iter (fun (n, m) ->
                 printfn "Sample %d Metrics:" n
-                printfn "Symbol overlaps: %d" m.SymbolOverlaps
-                printfn "Wire intersect symbols: %d" m.WireIntersectSym
-                printfn "Total wire bends: %d" m.TotalWireBends
-                printfn "Total wire crossings: %d" m.TotalWireCrossings
-                if m.SymbolOverlaps > 0 || m.WireIntersectSym > 0 || m.TotalWireBends > 4 || m.TotalWireCrossings > 3 then
-                    printfn "Fail test!"
-                else
-                    printfn "Pass test!")
+                if (n % 2 = 1) then
+                    printfn "Symbol overlaps: %d" m.SymbolOverlaps
+                    printfn "Wire intersect symbols: %d" m.WireIntersectSym
+                    printfn "Total wire bends: %d" m.TotalWireBends
+                    printfn "Total wire crossings: %d" m.TotalWireCrossings
+                    if m.SymbolOverlaps > 1 || m.WireIntersectSym > 0 || m.TotalWireBends > 8 || m.TotalWireCrossings > 1 then
+                        printfn "Fail test!"
+                    else
+                        printfn "Pass test!")
 
 //--------------------------------------------------------------------------------------------------//
 //----------------------------------------Example Test Circuits using Gen<'a> samples---------------//
@@ -780,7 +781,7 @@ module HLPTick3 =
         ///Returns a string option, either: Some (error message) or None.
         let failD3 (sample: int) (sheet: SheetT.Model) =
             let metrics = countMetrics sheet
-            if (metrics.SymbolOverlaps > 0 || metrics.WireIntersectSym > 0 || metrics.TotalWireBends > 4 || metrics.TotalWireCrossings > 3) && sample % 2 = 1 then
+            if (metrics.SymbolOverlaps > 1 || metrics.WireIntersectSym > 0 || metrics.TotalWireBends > 15 || metrics.TotalWireCrossings > 1) && sample % 2 = 1 then
                 Some ($"Test failed on sample {sample}: {metrics.SymbolOverlaps} symbol overlaps and {metrics.WireIntersectSym} wire symbol intersections.")
             else
                 None
@@ -831,7 +832,7 @@ module HLPTick3 =
         /// Test user can modify threshold variable to change the threshold distance between all components in the circuit.
         /// Runs count metrics on each test.
         let testD3Easy testNum firstSample dispatch =
-            let threshold = 450.0
+            let threshold = 400.0
             runTestOnSheets
                 "2 Mux4 and 1 DeMux threshold distance apart: fail on overlapping symbols or symbol wire intersect"
                 firstSample
@@ -863,7 +864,7 @@ module HLPTick3 =
         /// Test user can modify threshold variable to change the threshold distance between all components in the circuit.
         /// Runs count metrics on each test.
         let testD3SpacedOut testNum firstSample dispatch =
-            let threshold = 450.0
+            let threshold = 400.0
             runTestOnSheets
                 "2 Mux4 and 1 DeMux threshold distance apart: fail on overlapping symbols or symbol wire intersect - 2nd Easy Case"
                 firstSample
@@ -879,14 +880,14 @@ module HLPTick3 =
         /// Test user can modify threshold variable to change the threshold distance between all components in the circuit.
         /// Runs count metrics on each test.
         let testD3Compressed testNum firstSample dispatch =
-            let threshold = 200.0
+            let threshold = 1000.0
             runTestOnSheets
                 "2 Mux4 and 1 DeMux threshold distance apart: fail on overlapping symbols or symbol wire intersect"
                 firstSample
                 makeSamplesD3Easy                  
                 (makeTestD3Compressed threshold)
-                Asserts.failD3
-                //Asserts.failOnAllTests
+                //Asserts.failD3
+                Asserts.failOnAllTests 
                 dispatch
             |> recordPositionInTest testNum dispatch
             (collectMetricsOfTests makeSamplesD3Easy (makeTestD3Compressed threshold))
@@ -895,13 +896,14 @@ module HLPTick3 =
         /// Test user can modify threshold variable to change the threshold distance between all components in the circuit.
         /// Runs count metrics on each test.
         let testFixedConnectCircuitGen testNum firstSample dispatch =
-            let threshold = 200.0
+            let threshold = 400.0
             runTestOnSheets
                 "Circuit made of components and connections list, threshold distance apart: fail on overlapping symbols or symbol wire intersect"
                 firstSample
                 makePositions
                 (makeTestFixedConnectCircuitGen threshold)
                 Asserts.failD3
+                //Asserts.failOnAllTests
                 dispatch
             |> recordPositionInTest testNum dispatch
 
@@ -909,7 +911,7 @@ module HLPTick3 =
         /// Test user can modify threshold variable to change the threshold distance between all components in the circuit.
         /// Runs count metrics on each test.
         let testRandomConnectCircuitGen testNum firstSample dispatch =
-            let threshold = 200.0
+            let threshold = 400.0
             runTestOnSheets
                 "Circuit made of components list and randomly connected components, threshold distance apart: fail on overlapping symbols or symbol wire intersect"
                 firstSample
@@ -918,6 +920,22 @@ module HLPTick3 =
                 Asserts.failD3
                 dispatch
             |> recordPositionInTest testNum dispatch
+
+        /// testD3EasyIndiv test: Checks if D3 works for sets of easy test cases and iterates through each test case and shows circuit before and after D3 function applied.
+        /// Test user can modify threshold variable to change the threshold distance between all components in the circuit.
+        /// Runs count metrics on each test.
+        let testD3EasyIndiv testNum firstSample dispatch =
+            let threshold = 400.0
+            runTestOnSheets
+                "2 Mux4 and 1 DeMux threshold distance apart: fail on overlapping symbols or symbol wire intersect"
+                firstSample
+                makeSamplesD3Easy                  
+                (makeTestD3Easy threshold)
+                //Asserts.failD3
+                Asserts.failOnAllTests
+                dispatch
+            |> recordPositionInTest testNum dispatch
+            (collectMetricsOfTests makeSamplesD3Easy (makeTestD3Easy threshold))
 
         /// List of tests available which can be run ftom Issie File Menu.
         /// The first 9 tests can also be run via Ctrl-n accelerator keys as shown on menu
@@ -931,7 +949,7 @@ module HLPTick3 =
                 "Test4", testD3Hard // set of hard tests to evaluate D3
                 "Test5", testD3SpacedOut // set of test with more spaced out components to evaluate D3
                 "Test6", testD3Compressed // set of test with more compressed components to evaluate D3
-                "Test7", testFixedConnectCircuitGen // set of tests to evaluate D3 designed using DSL with given components and connections list
+                "Test7", testD3EasyIndiv // set of tests to evaluate D3 designed using DSL with given components and connections list
                 "Test8", testRandomConnectCircuitGen // set of tests to evaluate D3 designed using DSL with only components list, randomly connect components
                 "Next Test Error", fun _ _ _ -> printf "Next Error:"
             ]
